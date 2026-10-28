@@ -8,6 +8,9 @@ IDENT = re.compile(r"^[a-z][a-z0-9-]{0,23}$")
 HOST = re.compile(r"^(?=.{4,253}$)[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?)+$")
 CHANNEL = re.compile(r"^(?:|@[A-Za-z0-9_]{5,32}|https://t\.me/[A-Za-z0-9_]{5,32})$")
 CARRIERS = {"https", "https-lanes", "websocket", "websocket-lanes"}
+# The upstream WEB relay has a hard default limit of 32 active profiles.
+MAX_WEB_SECRETS = 32
+MAX_CLIENTS_PER_INBOUND = 31
 
 
 def new_secret():
@@ -30,6 +33,7 @@ def validate(state):
         raise ValueError("profile count must be 1..32")
     seen_ids, seen_secrets, seen_slots = set(), set(), set()
     enabled = 0
+    active_secrets = 0
     for p in profiles:
         if not isinstance(p, dict) or not IDENT.fullmatch(str(p.get("id", ""))):
             raise ValueError("invalid profile id")
@@ -54,12 +58,36 @@ def validate(state):
             raise ValueError("invalid enabled")
         if p.get("carrier", "websocket") not in CARRIERS:
             raise ValueError("invalid carrier")
+        clients = p.get("clients", [])
+        if not isinstance(clients, list) or len(clients) > MAX_CLIENTS_PER_INBOUND:
+            raise ValueError("invalid inbound client count")
+        local_ids = set()
+        for c in clients:
+            if not isinstance(c, dict) or not IDENT.fullmatch(str(c.get("id", ""))):
+                raise ValueError("invalid client id")
+            if c["id"] in local_ids:
+                raise ValueError("duplicate client id")
+            local_ids.add(c["id"])
+            label = c.get("label")
+            if not isinstance(label, str) or not (1 <= len(label.strip()) <= 80):
+                raise ValueError("invalid client label")
+            token = c.get("secret")
+            if not isinstance(token, str) or not HEX.fullmatch(token) or token in seen_secrets:
+                raise ValueError("duplicate or invalid client secret")
+            if type(c.get("enabled")) is not bool:
+                raise ValueError("invalid client enabled")
+            seen_secrets.add(token)
+            if p["enabled"] and c["enabled"]:
+                active_secrets += 1
         enabled += bool(p["enabled"])
+        active_secrets += bool(p["enabled"])  # backward-compatible inbound/owner secret
         seen_ids.add(p["id"])
         seen_secrets.add(secret)
         seen_slots.add(slot)
     if not enabled:
         raise ValueError("at least one profile must be enabled")
+    if active_secrets > MAX_WEB_SECRETS:
+        raise ValueError("WEB relay supports at most 32 active inbound + client secrets")
     return state
 
 
@@ -71,16 +99,32 @@ def web_url(host, secret):
     return "https://t.me/webproxy?" + urlencode({"server": host, "secret": secret})
 
 
+def effective_client_secrets(profile):
+    """Enabled user secrets accepted by the shared MTProxy backend."""
+    return [c["secret"] for c in profile.get("clients", []) if c["enabled"]]
+
+
 def relay_profiles(state):
+    """One WEB bridge capability per enabled secret, on the same inbound port."""
     validate(state)
-    return {
-        "profiles": [
-            {
-                "name": p["id"],
-                "secret": p["secret"],
-                "backend": "127.0.0.1:" + str(10443 + p["slot"]),
-                "carrier_mode": p.get("carrier", "websocket"),
-            }
-            for p in state["profiles"] if p["enabled"]
-        ]
-    }
+    profiles = []
+    for p in state["profiles"]:
+        if not p["enabled"]:
+            continue
+        backend = "127.0.0.1:" + str(10443 + p["slot"])
+        transport = p.get("carrier", "websocket")
+        profiles.append({
+            "name": p["id"],
+            "secret": p["secret"],
+            "backend": backend,
+            "carrier_mode": transport,
+        })
+        for c in p.get("clients", []):
+            if c["enabled"]:
+                profiles.append({
+                    "name": p["id"] + "--" + c["id"],
+                    "secret": c["secret"],
+                    "backend": backend,
+                    "carrier_mode": transport,
+                })
+    return {"profiles": profiles}
