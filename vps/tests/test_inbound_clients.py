@@ -17,7 +17,7 @@ os.environ["PANEL_ADMIN_PASSWORD_HASH"] = generate_password_hash("correct-test-p
 import app
 from manager.model import validate, relay_profiles, web_url
 from manager.runner import build_argv
-from manager.telemetry import parse_stats
+from manager.telemetry import parse_stats, relay_traffic, format_bytes
 
 
 def fixture():
@@ -84,6 +84,32 @@ class UserSecretTests(unittest.TestCase):
         self.assertEqual(parse_stats(b"total_special_connections\t-1\n"), {})
 
 
+    def test_traffic_human_format_and_no_fake_zero(self):
+        self.assertEqual(format_bytes(None), "—")
+        self.assertEqual(format_bytes(0), "0 B")
+        self.assertEqual(format_bytes(1024), "1.00 KiB")
+
+    def test_global_relay_bytes_not_per_client(self):
+        import io
+        from manager import telemetry
+
+        class Response(io.BytesIO):
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.close()
+                return False
+
+        raw = b"tproxy_bytes_up_total 2048\ntproxy_bytes_down_total 1024\ntproxy_sessions_live 3\n"
+        with patch.object(telemetry, "urlopen", return_value=Response(raw)):
+            result = relay_traffic()
+        self.assertEqual(result["total"], 3072)
+        self.assertEqual(result["scope"], "all_inbounds_since_relay_restart")
+        with patch.object(telemetry, "urlopen", return_value=Response(b"invalid")):
+            self.assertIsNone(relay_traffic())
+
+
 class ManagementUITests(unittest.TestCase):
     def setUp(self):
         auth = patch.dict(os.environ, {
@@ -134,7 +160,7 @@ class ManagementUITests(unittest.TestCase):
         overview = self.client.get("/", base_url=self.base).get_data(as_text=True)
         self.assertIn("اتصالات فعلی", overview)
         self.assertIn(">3</div>", overview)
-        self.assertIn("نیازمند محاسبه‌گر ترافیک مستقل", overview)
+        self.assertIn("مصرف کل WEB Relay", overview)
 
     def test_create_disable_rotate_delete_user(self):
         response = self.post("/inbounds/main/users", {"label": "Alice"})
