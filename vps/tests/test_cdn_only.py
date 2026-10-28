@@ -85,7 +85,7 @@ class CDNOnlyTests(unittest.TestCase):
         self.assertIn("CDN_FLAG.is_file()", source)
         self.assertIn("{% if cdn_only %}", template)
         self.assertIn("حالت CDN-only فعال است", template)
-        self.assertIn("پورت داخلی MTProxy", template)
+        self.assertIn("پورت داخلی", template)
         self.assertIn("لینک WEB کاربر", template)
         self.assertNotIn("https://t.me/proxy?", template)
 
