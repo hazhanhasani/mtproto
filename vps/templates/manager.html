@@ -103,6 +103,12 @@
         <button class="btn primary" type="submit">✈ انتشار اینباند در کانال</button>
         <span class="hint">مقصد: {{bot.channel_id}} · ارسال دستی</span>
       </form>
+      <form action="{{url_for('schedule_channel_posts',profile_id=p.id)}}" method="post" class="field-row">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <input type="hidden" name="enabled" value="{{'0' if p.id in bot.scheduled_inbounds else '1'}}">
+        <button class="btn compact" type="submit">{{'⏸ توقف انتشار ۳۰ دقیقه‌ای' if p.id in bot.scheduled_inbounds else '◷ انتشار هر ۳۰ دقیقه'}}</button>
+        <span class="hint">{{'فعال' if p.id in bot.scheduled_inbounds else 'غیرفعال'}} · زمان سرور :۰۰ و :۳۰</span>
+      </form>
       {% endif %}
       {% if not p.get('clients',[]) %}<div class="empty">هنوز کاربری برای این اینباند تعریف نشده است. از فرم زیر اولین کاربر را بساز.</div>{% endif %}
       {% for c in p.get('clients',[]) %}
@@ -204,13 +210,23 @@
           <div class="info-banner">⚠ در حالت Cloudflare CDN-only، لینک WEB آزمایشی برای کلاینت سازگار منتشر می‌شود؛ دکمه Connect استاندارد MTProto در تلگرام معمولی به مسیر مستقیم TCP نیاز دارد.</div>
         </div>
       </section>
-      <div class="panel"><div class="panel-title"><h2>انتشار دستی اینباندها</h2><span class="hint">ارسال پست با دکمه اتصال به کانال تنظیم‌شده</span></div>
+      <div class="panel"><div class="panel-title"><h2>انتشار و زمان‌بندی اینباندها</h2><span class="hint">انتشار دستی یا هر ۳۰ دقیقه در دقیقه‌های ۰۰ و ۳۰</span></div>
         {% if not bot.ready %}<div class="empty">برای فعال‌کردن انتشار، توکن ربات، شناسه مدیر و کانال را تنظیم کن.</div>{% endif %}
         {% for p in state.profiles %}
-        <div class="health-line"><span><strong>{{p.label}}</strong> <small>#{{p.id}}</small></span>
-          <form method="post" action="{{url_for('publish_to_channel',profile_id=p.id)}}"><input type="hidden" name="_csrf" value="{{csrf}}">
-            <button type="submit" class="btn compact" {{'disabled' if not bot.ready or not p.enabled else ''}}>انتشار در کانال</button>
-          </form>
+        <div class="health-line">
+          <span><strong>{{p.label}}</strong> <small>#{{p.id}}</small><br>
+          <span class="status {{'up' if p.id in bot.scheduled_inbounds else 'unknown'}}">{{'هر ۳۰ دقیقه فعال' if p.id in bot.scheduled_inbounds else 'زمان‌بندی خاموش'}}</span></span>
+          <div class="row-actions">
+            <form method="post" action="{{url_for('schedule_channel_posts',profile_id=p.id)}}">
+              <input type="hidden" name="_csrf" value="{{csrf}}">
+              <input type="hidden" name="enabled" value="{{'0' if p.id in bot.scheduled_inbounds else '1'}}">
+              <button type="submit" class="btn compact" {{'disabled' if not bot.ready or (not p.enabled and p.id not in bot.scheduled_inbounds) else ''}}>{{'توقف خودکار' if p.id in bot.scheduled_inbounds else 'فعال‌سازی ۳۰ دقیقه‌ای'}}</button>
+            </form>
+            <form method="post" action="{{url_for('publish_to_channel',profile_id=p.id)}}">
+              <input type="hidden" name="_csrf" value="{{csrf}}">
+              <button type="submit" class="btn compact" {{'disabled' if not bot.ready or not p.enabled else ''}}>ارسال دستی</button>
+            </form>
+          </div>
         </div>
         {% endfor %}
       </div>
