@@ -119,6 +119,30 @@ def collect():
         checks.append(check("service_" + name.split(".")[0].replace("-", "_"),
                             "ok" if healthy else "fail",
                             "سرویس فعال است" if healthy else "سرویس اجرا نمی‌شود"))
+    # This is the privileged *apply* job, distinct from the healthy socket
+    # broker. Only fixed systemd properties are read; no raw logs or args.
+    try:
+        job = subprocess.run(
+            ["systemctl", "show", "blue-mtproxy-apply.service",
+             "--property=Result", "--property=ExecMainStatus", "--property=ActiveState"],
+            capture_output=True, text=True, timeout=4, check=False,
+        )
+        props = dict(line.split("=", 1) for line in job.stdout.splitlines()
+                     if "=" in line)
+        apply_result = props.get("Result", "unknown")
+        if job.returncode != 0 or apply_result not in ("success", "exit-code", "timeout", "signal"):
+            checks.append(check("control_apply", "warn",
+                                "نتیجه عملیات ذخیره مشخص نیست؛ سرویس apply را بررسی کنید"))
+        elif apply_result == "success":
+            checks.append(check("control_apply", "ok",
+                                "آخرین عملیات سرویس اعمال تنظیمات بدون خطا پایان یافته است"))
+        else:
+            checks.append(check("control_apply", "fail",
+                                "عملیات اعمال تنظیمات با خطا متوقف شده؛ گزارش blue-mtproxy-apply را بررسی کنید"))
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        checks.append(check("control_apply", "warn",
+                            "وضعیت سرویس اعمال تنظیمات قابل خواندن نیست"))
+
     ready = relay_ready()
     checks.append(check("relay_ready", "ok" if ready else "fail",
                         "Relay آماده اتصال است" if ready else "Relay آماده نیست"))
