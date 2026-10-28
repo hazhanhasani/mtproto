@@ -18,6 +18,7 @@ from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
 from manager.control_client import dispatch
 
 STATE = Path("/var/lib/blue-mtproxy/state.json")
+CDN_FLAG = Path("/etc/blue-mtproxy/cdn-only")
 LOCK = STATE.with_name("ui.lock")
 app = Flask(__name__)
 app.secret_key = os.environ["PANEL_SECRET_KEY"]
@@ -111,6 +112,7 @@ def debug_dashboard():
     return render_template_string(
         DEBUG_HTML, report=report,
         checks=report.get("checks", []), profiles=report.get("profiles", []),
+        cdn_only=CDN_FLAG.is_file(),
     )
 
 
@@ -223,6 +225,7 @@ def index():
         DASHBOARD_HTML,
         state=state,
         services=services,
+        cdn_only=CDN_FLAG.is_file(),
         links={p["id"]: web_url(state["hostname"], p["secret"]) for p in state["profiles"]},
         direct_links={p["id"]: direct_url(state["hostname"], p["secret"], 10443+p["slot"]) for p in state["profiles"]},
         csrf=session["csrf"],
@@ -368,9 +371,14 @@ DASHBOARD_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset
 {% for p in state.profiles %}
 <article class="card profile">
 <div class="header"><strong>{{p.label}}</strong><span class="pill {{'ok' if services[p.id]=='active' else ''}}">{{services[p.id] or 'unknown'}}</span></div>
-<div class="sub">شناسه {{p.id}} · پورت MTProto {{10443+p.slot}}</div>
-<div><label>لینک اصلی MTProto (مناسب کلاینت‌های استاندارد تلگرام)</label><code>{{direct_links[p.id]}}</code></div>
-<div><label>لینک WEB آزمایشی (تنها برای کلاینت دارای WEB Adapter)</label><code>{{links[p.id]}}</code></div>
+<div class="sub">شناسه {{p.id}} · پورت داخلی MTProxy {{10443+p.slot}}</div>
+{% if cdn_only %}
+<div class="notice">حالت Cloudflare CDN-only فعال است. اتصال عمومی فقط از مسیر HTTPS/WSS پورت 443 انجام می‌شود؛ MTProxy روی این پورت داخلی است و لینک استاندارد MTProto از CDN عادی عبور نمی‌کند.</div>
+<div><label>لینک WEB آزمایشی از مسیر Cloudflare (کلاینت سازگار ضروری است)</label><code>{{links[p.id]}}</code></div>
+{% else %}
+<div><label>لینک مستقیم MTProto (خارج از CDN)</label><code>{{direct_links[p.id]}}</code></div>
+<div><label>لینک WEB آزمایشی (HTTPS/WSS 443)</label><code>{{links[p.id]}}</code></div>
+{% endif %}
 <div class="sub">WEB بدون پشتیبانی ویژه در کلاینت ممکن است «غیر قابل دسترس» نشان داده شود؛ سلامت SSL کافی نیست.</div>
 <form action="{{url_for('update_profile',profile_id=p.id)}}" method="post" class="profile">
 <input type="hidden" name="_csrf" value="{{csrf}}">
@@ -424,7 +432,11 @@ DEBUG_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset="ut
 <p class="sub">بررسی مستقیم سرویس‌ها، WEB Bridge و MTProxy؛ بدون تغییر تنظیمات یا افشای Secret</p>
 <div class="notice">WEB یک پروتکل آزمایشی است. حتی اگر تمامی آزمون‌های سرور سالم باشند،
 پشتیبانی کلاینت تلگرام و اتصال واقعی آن هنوز باید جداگانه آزمایش شود.
-برای استفاده عمومی، لینک MTProto استاندارد را نیز امتحان کنید.</div>
+{% if cdn_only %}
+حالت CDN-only فعال است؛ لینک مستقیم MTProto از Cloudflare HTTP CDN عبور نمی‌کند و پورت داخلی از اینترنت مسدود شده است.
+{% else %}
+برای استفاده عمومی، لینک MTProto استاندارد را نیز امتحان کنید.
+{% endif %}</div>
 <section class="card">
 <div class="header"><h2>وضعیت سرور</h2><span class="debug-status {{report.overall}}">
 {{ 'نیازمند بررسی' if report.overall=='fail' else 'بررسی سرور انجام شد؛ اتصال کلاینت تأیید نشده' }}</span></div>
