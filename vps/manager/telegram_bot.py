@@ -12,7 +12,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from app import CDN_FLAG, add_inbound_client, apply_mutation, get_profile, load_state
+from app import CDN_FLAG, apply_mutation, get_profile, load_state
 from manager.bot_config import get_config, ready, update_config
 from manager.model import direct_url, new_secret, web_url
 
