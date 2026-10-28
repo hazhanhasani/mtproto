@@ -37,7 +37,46 @@ UNIT
 # The bot runs as the panel's existing unprivileged UID. Never create a
 # world-readable token file or insert bot secrets into EnvironmentFile.
 install -d -m 0700 -o bluepanel -g bluepanel /var/lib/blue-mtproxy
+cat > /etc/systemd/system/blue-mtproxy-telegram-cron.service <<'UNIT'
+[Unit]
+Description=Publish selected Blue Proxy inbounds to Telegram channel
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=bluepanel
+Group=bluepanel
+WorkingDirectory=/opt/blue-mtproxy/vps
+EnvironmentFile=/etc/blue-mtproxy/panel.env
+ExecStart=/opt/blue-mtproxy/.venv/bin/python -m manager.cron_publish
+TimeoutStartSec=180
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/blue-mtproxy
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+CapabilityBoundingSet=
+UMask=0077
+UNIT
+
+cat > /etc/systemd/system/blue-mtproxy-telegram-cron.timer <<'UNIT'
+[Unit]
+Description=Telegram channel posts every 30 minutes for selected inbounds
+[Timer]
+OnCalendar=*-*-* *:00,30:00
+AccuracySec=1s
+Persistent=true
+Unit=blue-mtproxy-telegram-cron.service
+[Install]
+WantedBy=timers.target
+UNIT
+
 systemctl daemon-reload
 systemctl enable blue-mtproxy-telegram-bot.service
 systemctl restart blue-mtproxy-telegram-bot.service
-echo "Telegram bot unit installed (configure token and channel in /bot)"
+systemctl enable --now blue-mtproxy-telegram-cron.timer
+echo "Telegram bot and 30-minute cron installed (enable specific inbounds in /bot)"
