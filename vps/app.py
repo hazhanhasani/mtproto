@@ -92,6 +92,9 @@ def collect_diagnostics():
                 not isinstance(report.get("checks"), list) or
                 not isinstance(report.get("profiles"), list)):
             return diagnostic_failure("cache_invalid", "گزارش معتبر نیست")
+        # Show the age of the root-generated snapshot so a recently repaired
+        # backend is not mistaken for a fresh failure.
+        report["report_age_seconds"] = max(0, int(current_time() - stat.st_mtime))
         return report
     except FileNotFoundError:
         return diagnostic_failure("cache_missing", "سرویس مستقل عیب‌یابی هنوز گزارش تولید نکرده است")
@@ -456,6 +459,6 @@ DEBUG_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset="ut
 <p class="sub">نسخه JSON برای ارسال نتیجهٔ عیب‌یابی آماده است. اطلاعات ورود، Secret، آدرس
 احراز هویت WEB و فایل‌های تنظیمات در گزارش نمایش داده نمی‌شوند.</p>
 <a href="{{url_for('debug_json')}}">بازکردن /debug.json</a>
-<p class="sub">زمان بررسی: {{report.get('generated_at','—')}} · {{report.note}}</p>
+<p class="sub">زمان بررسی: {{report.get('generated_at','—')}} · سن گزارش: {{report.get('report_age_seconds','نامشخص')}} ثانیه · {{report.note}}</p>
 </div>
 </main></body></html>"""
