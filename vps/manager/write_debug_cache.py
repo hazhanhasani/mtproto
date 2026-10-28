@@ -40,7 +40,7 @@ def publish(snapshot, directory=CACHE_DIR):
     # Never store the raw state, process output, exception details or secrets.
     if snapshot.get("schema") != 1 or not isinstance(snapshot.get("checks"), list):
         raise ValueError("unexpected diagnostic schema")
-    expected_keys = {"schema", "generated_at", "overall", "checks", "profiles", "note"}
+    expected_keys = {"schema", "generated_at", "overall", "checks", "profiles", "traffic", "note"}
     if not set(snapshot).issubset(expected_keys):
         raise ValueError("unexpected diagnostic fields")
     directory.mkdir(mode=0o750, parents=True, exist_ok=True)
