@@ -64,15 +64,23 @@ def reconcile():
         ETC.mkdir(parents=True, exist_ok=True)
         os.chmod(ETC, 0o750)
         os.chown(ETC, 0, runtime_group)
+        changed = set()
         for p in active:
-            atomic(ETC / (p["id"] + ".json"), dump(p), 0o640, runtime_group)
-        atomic(PROFILES, candidate, 0o400, relay_group)
+            runtime_path = ETC / (p["id"] + ".json")
+            runtime = dump({key: p[key] for key in ("id", "slot", "secret", "ad_tag")})
+            if not runtime_path.exists() or runtime_path.read_bytes() != runtime:
+                atomic(runtime_path, runtime, 0o640, runtime_group)
+                changed.add(p["id"])
+        relay_changed = previous != candidate
+        if relay_changed:
+            atomic(PROFILES, candidate, 0o400, relay_group)
         try:
             run("/usr/local/bin/tproxy-server",
                 "-config", "/etc/tproxy-server/config.json",
                 "-profiles-file", str(PROFILES), "-check")
         except Exception:
-            atomic(PROFILES, previous, 0o400, relay_group)
+            if relay_changed:
+                atomic(PROFILES, previous, 0o400, relay_group)
             raise
 
         existing = {p.stem for p in ETC.glob("*.json")}
@@ -84,8 +92,14 @@ def reconcile():
             (ETC / (profile_id + ".json")).unlink(missing_ok=True)
         for profile_id in sorted(desired):
             run("systemctl", "enable", UNIT.format(profile_id))
-            run("systemctl", "restart", UNIT.format(profile_id))
-        run("systemctl", "restart", "tproxy-server.service")
+            active_now = subprocess.run(
+                ["systemctl", "is-active", "--quiet", UNIT.format(profile_id)],
+                check=False, timeout=8,
+            ).returncode == 0
+            if profile_id in changed or not active_now:
+                run("systemctl", "restart", UNIT.format(profile_id))
+        if relay_changed:
+            run("systemctl", "restart", "tproxy-server.service")
 
 
 if __name__ == "__main__":
