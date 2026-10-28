@@ -396,6 +396,20 @@ def edit_user(profile_id, client_id):
     return mutate_client(change, profile_id, "دسترسی کاربر به‌روزرسانی شد")
 
 
+@app.post("/inbounds/<profile_id>/users/<client_id>/toggle")
+def toggle_user(profile_id, client_id):
+    """Quick enable/disable from the global Users table."""
+    def change(state):
+        client = client_in_inbound(get_profile(state, profile_id), client_id)
+        client["enabled"] = not client["enabled"]
+    try:
+        apply_mutation(change)
+        flash("وضعیت دسترسی کاربر تغییر کرد", "success")
+    except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("users"))
+
+
 @app.post("/inbounds/<profile_id>/users/<client_id>/rotate")
 def rotate_user(profile_id, client_id):
     def change(state):
