@@ -81,11 +81,13 @@ class CDNOnlyTests(unittest.TestCase):
 
     def test_panel_never_presents_direct_mtproto_as_cdn(self):
         source = (ROOT / "app.py").read_text()
+        template = (ROOT / "templates" / "manager.html").read_text()
         self.assertIn("CDN_FLAG.is_file()", source)
-        self.assertIn("{% if cdn_only %}", source)
-        self.assertIn("لینک مستقیم MTProto (خارج از CDN)", source)
-        self.assertIn("پورت داخلی MTProxy", source)
-        self.assertIn("لینک WEB آزمایشی از مسیر Cloudflare", source)
+        self.assertIn("{% if cdn_only %}", template)
+        self.assertIn("حالت CDN-only فعال است", template)
+        self.assertIn("پورت داخلی MTProxy", template)
+        self.assertIn("لینک WEB کاربر", template)
+        self.assertNotIn("https://t.me/proxy?", template)
 
     def test_enabling_cdn_does_not_rotate_credentials(self):
         text = (ROOT / "cdn-only.sh").read_text()
