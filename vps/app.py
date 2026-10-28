@@ -16,6 +16,7 @@ from werkzeug.security import check_password_hash
 
 from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
 from manager.control_client import dispatch
+from manager.bot_config import configure as configure_bot, get_config as get_bot_config, ready as bot_ready
 from manager.telemetry import format_bytes
 
 STATE = Path("/var/lib/blue-mtproxy/state.json")
@@ -31,7 +32,7 @@ app.config.update(
     MAX_CONTENT_LENGTH=32768,
 )
 FAILURES = {}
-PANEL_UI_VERSION = "0.4.0"  # distinguish deployed UI from older single-page panel
+PANEL_UI_VERSION = "0.5.0"  # distinguish deployed UI from older single-page panel
 
 
 @app.after_request
@@ -228,8 +229,16 @@ def render_manager(section="overview", selected_id=None):
     user_records = [(p, c) for p in state["profiles"] for c in p.get("clients", [])]
     total_connections = [p["active_connections"] for p in telemetry.values()
                          if type(p.get("active_connections")) is int]
+    bot_data = get_bot_config()
+    bot_view = {
+        "admin_id": bot_data["admin_id"],
+        "channel_id": bot_data["channel_id"],
+        "auto_publish": bot_data["auto_publish"],
+        "token_set": bool(bot_data["token"]),
+        "ready": bot_ready(bot_data),
+    }
     return render_template(
-        "manager.html", ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
+        "manager.html", bot=bot_view, ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
         section=section, selected=selected, users=user_records,
         total_users=len(user_records), total_connections=(sum(total_connections)
         if total_connections and len(total_connections) ==
@@ -271,6 +280,11 @@ def users():
     return render_manager("users")
 
 
+@app.get("/bot")
+def bot_page():
+    return render_manager("bot")
+
+
 @app.get("/settings")
 def settings_page():
     return render_manager("settings")
@@ -281,7 +295,7 @@ def panel_version():
     """Authenticated, cache-free feature marker to confirm VPS deployment."""
     return {"ui_version": PANEL_UI_VERSION, "features": [
         "inbounds", "inbound-clients", "global-user-create",
-        "active-inbound-connections", "web-aggregate-traffic",
+        "active-inbound-connections", "web-aggregate-traffic", "telegram-channel-bot",
     ]}
 
 
@@ -424,6 +438,34 @@ def delete_user(profile_id, client_id):
         client_in_inbound(p, client_id)
         p["clients"] = [c for c in p.get("clients", []) if c["id"] != client_id]
     return mutate_client(change, profile_id, "کاربر حذف و Secret او از سرویس خارج شد")
+
+
+@app.post("/bot/config")
+def save_bot_config():
+    try:
+        state = load_state()
+        configure_bot(
+            request.form.get("token", ""),
+            request.form.get("admin_id", ""),
+            request.form.get("channel_id", ""),
+            request.form.get("auto_publish") == "on",
+            [p["id"] for p in state["profiles"]],
+        )
+        flash("تنظیمات ربات ذخیره شد. ربات باید در کانال دسترسی ارسال پست داشته باشد.", "success")
+    except (ValueError, OSError) as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("bot_page"))
+
+
+@app.post("/bot/publish/<profile_id>")
+def publish_to_channel(profile_id):
+    try:
+        from manager.telegram_bot import publish
+        publish(profile_id)
+        flash("پروکسی در کانال منتشر شد.", "success")
+    except (ValueError, OSError, RuntimeError) as exc:
+        flash("انتشار انجام نشد: " + str(exc)[:200], "error")
+    return redirect(url_for("inbound_detail", profile_id=profile_id))
 
 
 @app.post("/settings/auto-update")
