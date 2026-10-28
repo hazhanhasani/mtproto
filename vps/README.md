@@ -345,6 +345,50 @@ client supports the experimental protocol. For broad compatibility, use
 the standard `t.me/proxy` MTProto link and independently verify external TCP
 port `10443 + slot`.
 
+## Repair `runuser mtproxy test -r runtime/main.json` in the apply service
+
+If the `blue-mtproxy-control` socket responds to `ping` but an end-to-end
+apply stops with:
+
+```text
+Unable to reconcile proxy services:
+Command ['runuser', '-u', 'mtproxy', '--', 'test', '-r',
+'/etc/blue-mtproxy/runtime/main.json'] returned non-zero exit status 1
+```
+
+the failure is a **runtime profile readability probe within the restricted
+systemd apply process**, not a network, certificate, or broker failure.
+This specific check behaved differently from the previous successful
+`repair-backend.sh` access test executed directly on the host.
+Do not disable `NoNewPrivileges` or weaken the admin panel.
+
+The reconciler now validates the service config through OS file metadata:
+regular file (never a symlink), root ownership, dedicated group ownership
+(`mtproxy` or `tproxy`), and mode `0640`. It normalizes incorrect
+group/mode without modifying file contents. Directory traversal is restricted
+as before. Unlike calling `runuser` through PAM in a sandboxed oneshot,
+these checks are deterministic; backend availability is independently
+monitored by the real MTProxy service and the existing `/debug` TCP probe.
+
+To apply without reinstalling or altering client secrets:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-control.sh
+```
+
+A passing run prints `Verified end-to-end apply through the dedicated systemd
+reconciler`. If the apply still fails, **do not guess or reinstall**:
+retrieve its actual systemd error before further changes:
+
+```bash
+sudo systemctl show blue-mtproxy-apply.service -p Result -p ExecMainCode -p ExecMainStatus --no-pager
+sudo journalctl -u blue-mtproxy-apply.service -n 40 --no-pager
+```
+
+The real Telegram WEB/MTProto connection from a remote phone remains a
+separate acceptance test. Changing the profile label is a safe panel
+functional test; rotating the secret is not.
+
 ## Repair `operation_failed` after the control socket becomes healthy
 
 If `/debug` shows all of Caddy, MTProxy, WEB relay and
