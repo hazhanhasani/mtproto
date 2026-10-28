@@ -315,9 +315,10 @@ root reconciler continue to protect the backend.
 sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-control.sh
 ```
 
-The installer creates and enables `blue-mtproxy-control.service`, checks a
-real unprivileged IPC round-trip as `bluepanel`, removes the ineffective
-web sudoers allowance, and restarts **only the panel service**.
+The installer creates and enables `blue-mtproxy-control.service` and
+`blue-mtproxy-apply.service`, checks both a `ping` and a complete real
+apply using the `bluepanel` UID, removes the ineffective web sudoers
+allowance, and restarts **only the panel service** when the apply succeeds.
 It does not regenerate certificates, SSH accounts, client links, sponsor tags,
 or existing proxy instances. The GitHub auto-updater also maintains the
 control broker after future code changes.
@@ -343,6 +344,50 @@ successful server `/debug` still does not prove the user's Telegram WEB
 client supports the experimental protocol. For broad compatibility, use
 the standard `t.me/proxy` MTProto link and independently verify external TCP
 port `10443 + slot`.
+
+## Repair `operation_failed` after the control socket becomes healthy
+
+If `/debug` shows all of Caddy, MTProxy, WEB relay and
+`service_blue_mtproxy_control` as `ok` but saving an existing label shows
+"اعمال تنظیمات در سرویس مدیریت ناموفق بود", the panel has authenticated to
+the socket successfully but the **privileged apply action** failed.
+
+The first broker version attempted to execute `reconcile()` *inside its own
+heavily sandboxed systemd service*. This can fail on system operations required
+by the reconciler. Rather than widening the socket broker's filesystem and
+capabilities, the updated broker delegates only that fixed action to the
+separate root-owned `blue-mtproxy-apply.service` with
+`Type=oneshot`. systemd waits for the action to complete and propagates
+failure. The original validator remains in effect and the socket broker's
+write access is restricted to its own socket directory.
+
+On the **existing VPS**:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-control.sh
+```
+
+This installer now checks both `ping` and **a complete, real apply on the
+existing desired state** from the unprivileged `bluepanel` account before
+claiming success. It does not issue new Secrets, reissue SSL certificates,
+overwrite the state, or reinstall the backend. An existing state may be
+reconciled and an unhealthy proxy service restarted.
+
+If the end-to-end apply fails, the installer stops with the correct journal
+hint. To see the precise stage without sharing secrets:
+
+```bash
+sudo systemctl show blue-mtproxy-apply.service -p Result -p ExecMainCode -p ExecMainStatus --no-pager
+sudo journalctl -u blue-mtproxy-apply.service -n 45 --no-pager
+```
+
+Do not share full command lines, `state.json`, `panel.env`, or full
+credentials files. The panel's `/debug` now includes a `control_apply`
+row indicating whether the last systemd apply job succeeded or failed.
+
+For a functional UI test, **change only the label** of the existing profile
+and press Save. Verify that the label persists after refresh. Avoid rotating
+Secret merely as a test, because that invalidates old links.
 
 ## Administrator /debug — safe root-cause diagnostics
 
