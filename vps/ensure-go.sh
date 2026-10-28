@@ -15,14 +15,14 @@ is_usable_go() {
 
 if is_usable_go; then
   printf '[Go] Compatible toolchain already installed: %s\n' "$(go version)"
-  exit 0
+  return 0
 fi
 
 echo "[Go] Installing Go from operating-system packages (recommended)..."
 if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends golang-go; then
   if is_usable_go; then
     echo "[Go] OS packaged toolchain is compatible: $(go version)"
-    exit 0
+    return 0
   fi
   echo "[Go] OS packaged Go is older than 1.20; trying a checksum-verified official archive."
 else
@@ -38,7 +38,7 @@ if [[ -x "$target/bin/go" ]]; then
   export PATH="$target/bin:$PATH"
   if is_usable_go; then
     echo "[Go] Reusing installed verified toolchain: $(go version)"
-    exit 0
+    return 0
   fi
 fi
 archive="$(mktemp /tmp/blue-go.XXXXXX.tar.gz)"
