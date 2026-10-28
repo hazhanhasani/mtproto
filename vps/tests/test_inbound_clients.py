@@ -162,6 +162,54 @@ class ManagementUITests(unittest.TestCase):
         self.assertIn(">3</div>", overview)
         self.assertIn("مصرف کل WEB Relay", overview)
 
+    def test_global_user_form_is_visible_and_creates_real_user(self):
+        overview = self.client.get("/", base_url=self.base).get_data(as_text=True)
+        inbound_list = self.client.get("/inbounds", base_url=self.base).get_data(as_text=True)
+        users_html = self.client.get("/users", base_url=self.base).get_data(as_text=True)
+        detail = self.client.get("/inbounds/main", base_url=self.base).get_data(as_text=True)
+        self.assertIn("افزودن کاربر", overview)
+        self.assertIn("افزودن کاربر", inbound_list)
+        self.assertIn("افزودن کاربر", detail)
+        self.assertIn('name="inbound_id"', users_html)
+        self.assertIn('action="/users"', users_html)
+        self.assertIn('name="label"', users_html)
+        self.assertIn("UI 0.4.0", users_html)
+
+        resp = self.post("/users", {"label": "New user via Users", "inbound_id": "main"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.headers["Location"].endswith("/inbounds/main"))
+        state = json.loads(self.statefile.read_text())
+        self.assertEqual(state["profiles"][0]["clients"][0]["label"], "New user via Users")
+        self.assertTrue(state["profiles"][0]["clients"][0]["enabled"])
+        self.assertIn(
+            state["profiles"][0]["clients"][0]["secret"],
+            [p["secret"] for p in relay_profiles(state)["profiles"]],
+        )
+
+    def test_global_user_form_rejects_invalid_inbound_and_empty_label(self):
+        for fields in (
+            {"label": "Alice", "inbound_id": "../../etc/passwd"},
+            {"label": " ", "inbound_id": "main"},
+            {"label": "a" * 81, "inbound_id": "main"},
+        ):
+            with self.subTest(fields=fields):
+                resp = self.post("/users", fields)
+                self.assertEqual(resp.status_code, 302)
+                self.assertTrue(resp.headers["Location"].endswith("/users"))
+                self.assertEqual(
+                    json.loads(self.statefile.read_text())["profiles"][0].get("clients", []),
+                    [],
+                )
+
+    def test_ui_version_endpoint_requires_login(self):
+        r = self.client.get("/version", base_url=self.base)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json["ui_version"], "0.4.0")
+        self.assertIn("global-user-create", r.json["features"])
+        self.assertIn("no-store", r.headers.get("Cache-Control", ""))
+        fresh = app.app.test_client()
+        self.assertEqual(fresh.get("/version", base_url=self.base).status_code, 302)
+
     def test_create_disable_rotate_delete_user(self):
         response = self.post("/inbounds/main/users", {"label": "Alice"})
         self.assertEqual(response.status_code, 302)
