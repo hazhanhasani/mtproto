@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import struct
 import sys
 import tempfile
 import unittest
@@ -75,13 +76,35 @@ class ProtocolTests(unittest.TestCase):
             run.assert_called_once_with("apply")
 
     def test_reject_wrong_uid(self):
+        # Running this test as root must not turn the negative case into
+        # an allowed root peer. The broker intentionally authorizes UID 0;
+        # inject a synthetic non-root SO_PEERCRED response instead.
+        class PeerSocket:
+            def __init__(self, sock, uid):
+                self.sock = sock
+                self.uid = uid
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.sock.close()
+
+            def getsockopt(self, level, option, length):
+                if (level, option, length) == (socket.SOL_SOCKET, socket.SO_PEERCRED, 12):
+                    return struct.pack("3i", os.getpid(), self.uid, os.getgid())
+                return self.sock.getsockopt(level, option, length)
+
+            def __getattr__(self, name):
+                return getattr(self.sock, name)
+
         c, s = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
         with c:
             with patch.object(control, "run_action") as run:
                 c.sendall(b'{"version":1,"action":"apply"}\n')
-                control.serve_connection(s, os.getuid() + 1)
+                control.serve_connection(PeerSocket(s, 1002), panel_uid=1001)
                 answer = json.loads(c.recv(512))
-            self.assertEqual(answer["ok"], False)
+            self.assertEqual(answer, {"ok": False, "error": "operation_failed"})
             run.assert_not_called()
 
 
