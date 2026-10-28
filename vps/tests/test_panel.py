@@ -28,7 +28,7 @@ class PanelTests(unittest.TestCase):
         self.url = "https://panel.example.com"
 
     def csrf(self):
-        with self.client.session_transaction() as sess:
+        with self.client.session_transaction(base_url=self.url) as sess:
             return sess.get("csrf")
 
     def test_health_and_security_headers(self):
