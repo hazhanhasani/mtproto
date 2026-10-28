@@ -95,7 +95,7 @@
       <div class="panel-title"><h2>کاربران اینباند</h2><span class="hint">فعال‌سازی، قطع دسترسی و لینک اختصاصی</span></div>
       {% if not p.get('clients',[]) %}<div class="empty">هنوز کاربری برای این اینباند تعریف نشده است. از فرم زیر اولین کاربر را بساز.</div>{% endif %}
       {% for c in p.get('clients',[]) %}
-      <details class="user-item">
+      <details class="user-item" id="user-{{c.id}}">
         <summary><span class="user-avatar">{{c.label[:1]}}</span><span class="grow"><strong>{{c.label}}</strong><small>#{{c.id}}</small></span><span class="status {{'up' if c.enabled else 'down'}}">{{'مجاز' if c.enabled else 'غیرفعال'}}</span><span class="expand-arrow">⌄</span></summary>
         <div class="user-body">
           <div class="info-banner">این کاربر Secret مستقل دارد. آنلاین‌بودن، مصرف و محدودیت حجم به‌صورت تفکیکی در هسته فعلی قابل اندازه‌گیری یا اعمال نیست؛ شمارندهٔ بالای صفحه متعلق به کل اینباند است.</div>
@@ -161,7 +161,7 @@
       <div class="panel"><div class="filter"><input type="search" data-filter-table="users-table" aria-label="جستجوی کاربر" placeholder="جستجوی کاربران و اینباندها"></div>
       {% if not users %}<div class="empty">هنوز کاربری ثبت نشده است. از فرم «افزودن کاربر» در بالای همین صفحه استفاده کن.</div>{% endif %}
       <div class="table-wrap"><table id="users-table" class="listing"><thead><tr><th>کاربر</th><th>اینباند</th><th>دسترسی</th><th>مصرف کاربر</th><th>اتصال کاربر</th><th></th></tr></thead><tbody>
-      {% for p,c in users %}<tr><td><strong>{{c.label}}</strong><div class="secondary-text">#{{c.id}}</div></td><td>{{p.label}}</td><td><span class="status {{'up' if c.enabled else 'down'}}">{{'مجاز' if c.enabled else 'قطع'}}</span></td><td class="muted">—</td><td class="muted">—</td><td><a href="{{url_for('inbound_detail',profile_id=p.id)}}" class="table-link">مدیریت ←</a></td></tr>{% endfor %}
+      {% for p,c in users %}<tr><td><strong>{{c.label}}</strong><div class="secondary-text">#{{c.id}}</div></td><td>{{p.label}}</td><td><span class="status {{'up' if c.enabled else 'down'}}">{{'مجاز' if c.enabled else 'قطع'}}</span></td><td class="muted">—</td><td class="muted">—</td><td><div class="row-actions"><a href="{{url_for('inbound_detail',profile_id=p.id)}}#user-{{c.id}}" class="table-link">مدیریت ←</a><form method="post" action="{{url_for('toggle_user',profile_id=p.id,client_id=c.id)}}"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="mini-action {{'warn-action' if c.enabled else 'start-action'}}" type="submit">{{'غیرفعال کردن' if c.enabled else 'فعال کردن'}}</button></form></div></td></tr>{% endfor %}
       </tbody></table></div><p class="panel-note">برای مصرف و آنلاین‌بودن دقیق هر کاربر به حسابداری مستقل Secret در موتور انتقال نیاز است؛ به‌جای نمایش صفر ساختگی، «—» نشان داده می‌شود.</p></div>
 
       {% elif section=='settings' %}
