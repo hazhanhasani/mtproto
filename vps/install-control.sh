@@ -74,6 +74,10 @@ echo "[ok] Verified a round-trip broker ping from bluepanel."
 # panel's NoNewPrivileges=yes and never worked. Keep the web sandbox enabled.
 rm -f /etc/sudoers.d/blue-mtproxy
 echo "[ok] Web sudo policy retired; NoNewPrivileges stays enabled."
+# Publish a fresh report so /debug immediately reflects the new service.
+if systemctl cat blue-mtproxy-debug.service >/dev/null 2>&1; then
+  systemctl start blue-mtproxy-debug.service || true
+fi
 
 if [[ "${BLUE_CONTROL_NO_RESTART:-0}" != "1" ]]; then
   systemctl restart blue-mtproxy-panel.service
