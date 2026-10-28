@@ -203,13 +203,12 @@ transport. A WEB-compatible client must derive an authenticated HMAC bridge
 capability, open the secret-matched bridge page over real HTTPS, obtain a relay
 session, and reach its configured local MTProxy backend.
 
-A legacy panel deployment may have created
-`/etc/tproxy-server/profiles.json` with group-unreadable `0400`
-permissions. This has been corrected to `0640`, with a runtime user-access
-check. **This is a defensive correction, not a proven explanation of every
-connection failure**: the upstream systemd unit also uses `LoadCredential`,
-which may read the source file as root. Verify actual status before
-attributing the problem.
+The upstream WEB relay requires the `/etc/tproxy-server/profiles.json`
+**source** file to have zero group/other permission bits. This project
+enforces `0400 root:root`. The `tproxy` service receives the secret
+file through systemd `LoadCredential`, so granting the tproxy Unix group
+read access to the source is both unnecessary and rejected by the
+relay's direct `-check` configuration validation.
 
 On an existing installed VPS, do **not** rerun the initial bootstrap or rotate
 secrets. Fetch the fix and run a safe reconciliation:
@@ -219,9 +218,9 @@ sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-
 ```
 
 This preserves SSL, panel credentials and secrets. It makes the relay profile
-accessible to the `tproxy` group, reapplies valid managed profiles, restarts
-the relay, and performs read-only health checks. It does not disclose the
-client secret or derived bridge capability.
+**root-only** (0400), reapplies valid managed profiles, restarts the relay,
+and performs read-only health checks. It does not disclose the client secret
+or derived bridge capability.
 
 To diagnose without modifying the VPS:
 
@@ -362,13 +361,14 @@ This specific check behaved differently from the previous successful
 `repair-backend.sh` access test executed directly on the host.
 Do not disable `NoNewPrivileges` or weaken the admin panel.
 
-The reconciler now validates the service config through OS file metadata:
-regular file (never a symlink), root ownership, dedicated group ownership
-(`mtproxy` or `tproxy`), and mode `0640`. It normalizes incorrect
-group/mode without modifying file contents. Directory traversal is restricted
-as before. Unlike calling `runuser` through PAM in a sandboxed oneshot,
-these checks are deterministic; backend availability is independently
-monitored by the real MTProxy service and the existing `/debug` TCP probe.
+The reconciler now validates service files via OS metadata. **Two different
+permission policies apply**: runtime backend files are `0640 root:mtproxy`
+so the per-profile MTProxy service can read them; the WEB Relay source
+`/etc/tproxy-server/profiles.json` is **0400 root:root**, as required
+by the upstream relay and systemd `LoadCredential`. Both reject symlinks
+and unexpected owners. Unlike calling `runuser` through PAM inside
+the sandboxed oneshot, metadata checks are deterministic; service/socket
+health is independently monitored in `/debug`.
 
 To apply without reinstalling or altering client secrets:
 
@@ -388,6 +388,44 @@ sudo journalctl -u blue-mtproxy-apply.service -n 40 --no-pager
 The real Telegram WEB/MTProto connection from a remote phone remains a
 separate acceptance test. Changing the profile label is a safe panel
 functional test; rotating the secret is not.
+
+## Repair strict WEB relay profile permissions error
+
+If `blue-mtproxy-apply.service` shows:
+
+```text
+configuration error: profiles_file must not be readable or writable by
+any group or other
+```
+
+the source file `/etc/tproxy-server/profiles.json` has inappropriate
+group/other read bits. The reference Go relay explicitly rejects
+`os.Stat(path).Mode().Perm() & 0077 != 0` for a regular file read by
+the command-line `-check` operation. The official unit securely obtains
+the root-only file via `LoadCredential`.
+
+Earlier control-plane code incorrectly shared the MTProxy backend
+runtime-file permission rule (`0640 root:mtproxy`) with this sensitive
+WEB relay source (`0640 root:tproxy`), and its rollback reproduced
+the same error. The corrected code enforces `0400 root:root` both
+when applying new profiles and when restoring previous data. The
+separate `repair-web.sh` helper also keeps the strict upstream mode.
+
+**Repair a previously installed VPS without reinstalling:**
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-control.sh
+```
+
+The installer checks `ping` as the actual `bluepanel` user then runs a
+full `apply` using the isolated systemd oneshot. The reconciler normalizes
+file permissions, validates the Go relay configuration, and applies only
+necessary changes. No client Secret, sponsor tag, TLS credential, SSH setting,
+or admin password is regenerated.
+
+Do **not** use `chmod 644` or `chmod 640` on
+`/etc/tproxy-server/profiles.json`, and do not disable
+`NoNewPrivileges` to address this error.
 
 ## Repair `operation_failed` after the control socket becomes healthy
 
