@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Run from a root-owned checkout only. Uses a Git fast-forward policy and local rollback.
+set -Eeuo pipefail
+umask 077
+[[ "$(id -u)" == "0" ]] || { echo "Root required" >&2; exit 1; }
+[[ "${1:-}" == "" || "${1:-}" == "--force" ]] || { echo "Unknown option" >&2; exit 2; }
+force="${1:-}"
+repo=/opt/blue-mtproxy
+exec 9>/run/lock/blue-mtproxy-update.lock
+flock -n 9 || { echo "Update already running"; exit 0; }
+if [[ "$force" != "--force" ]]; then
+  enabled="$(python3 - <<'PY'
+import json
+with open('/var/lib/blue-mtproxy/state.json') as f:
+    print(json.load(f).get('auto_update') is True)
+PY
+)"
+  [[ "$enabled" == "True" ]] || { echo "Automatic updates disabled"; exit 0; }
+fi
+[[ "$(git -C "$repo" remote get-url origin)" == "https://github.com/hazhanhasani/mtproto.git" ]] || {
+  echo "Unexpected Git origin; update aborted" >&2; exit 1;
+}
+old="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" fetch --quiet origin main
+target="$(git -C "$repo" rev-parse FETCH_HEAD)"
+[[ "$old" != "$target" ]] || { echo "Already up to date: $old"; exit 0; }
+git -C "$repo" merge-base --is-ancestor "$old" "$target" || {
+  echo "Non-fast-forward update blocked" >&2; exit 1;
+}
+rollback() {
+  echo "Update failed, rolling back to $old" >&2
+  git -C "$repo" reset --hard "$old"
+  "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt" || true
+  systemctl restart blue-mtproxy-panel.service || true
+}
+trap rollback ERR
+git -C "$repo" reset --hard "$target"
+python3 -m unittest discover -s "$repo/vps/tests" -v
+bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh"
+"$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt"
+systemctl restart blue-mtproxy-panel.service
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if curl --silent --fail --max-time 2 http://127.0.0.1:8750/healthz | grep -q '"ok":true'; then
+    trap - ERR
+    echo "Updated to $target"
+    exit 0
+  fi
+  sleep 1
+done
+false

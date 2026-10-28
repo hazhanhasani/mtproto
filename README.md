@@ -1,4 +1,21 @@
-# Blue Telegram WEB Proxy for Cloudflare Workers
+# Telegram Proxies: VPS Manager and Cloudflare Worker
+
+## VPS — Blue Proxy Manager (WEB + MTProto + Sponsors)
+
+**Start here:** [VPS installation and management](vps/README.md).
+
+The VPS stack supports multiple independent secrets, sponsor Ad Tags, RTL Persian admin panel, Caddy TLS, automatic GitHub checks and a quick install on a **fresh** Debian/Ubuntu VPS.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hazhanhasani/mtproto/main/vps/bootstrap.sh -o /tmp/blue-proxy-bootstrap.sh
+sudo bash /tmp/blue-proxy-bootstrap.sh --domain proxy.example.com --panel-domain panel.example.com --email admin@example.com
+```
+
+The two DNS-only domains must point to your VPS. Open TCP 80/443 and the MTProto ports 10443–10474 (or just the ports you use). **Do not execute on an existing production webserver.** WEB proxy support remains experimental.
+
+---
+
+## Cloudflare Worker (separate experimental WEB option)
 
 > **Status: experimental / proof of concept.** Deployable Cloudflare Worker, not an officially supported Telegram relay. Live Telegram connectivity has **not** been verified for this repository.
 
