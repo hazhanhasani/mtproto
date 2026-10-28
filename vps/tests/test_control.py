@@ -100,7 +100,7 @@ class ClientTests(unittest.TestCase):
                 self.sent = data
 
             def recv(self, max_bytes):
-                return b'{"ok":true}\\n'.replace(b"\\\\n", b"\\n")
+                return (json.dumps({"ok": True}) + "\n").encode()
 
         fake = FakeSocket()
         with patch("manager.control_client.socket.socket", return_value=fake):
