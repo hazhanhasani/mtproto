@@ -196,6 +196,52 @@ sudo journalctl -u blue-mtproxy-panel -n 45 --no-pager
 curl --noproxy '*' -i --max-time 4 http://127.0.0.1:8750/healthz
 ```
 
+## WEB proxy reports "Unavailable" in Telegram
+
+A green TLS status and a normal public website do **not** test the WEB
+transport. A WEB-compatible client must derive an authenticated HMAC bridge
+capability, open the secret-matched bridge page over real HTTPS, obtain a relay
+session, and reach its configured local MTProxy backend.
+
+A legacy panel deployment may have created
+`/etc/tproxy-server/profiles.json` with group-unreadable `0400`
+permissions. This has been corrected to `0640`, with a runtime user-access
+check. **This is a defensive correction, not a proven explanation of every
+connection failure**: the upstream systemd unit also uses `LoadCredential`,
+which may read the source file as root. Verify actual status before
+attributing the problem.
+
+On an existing installed VPS, do **not** rerun the initial bootstrap or rotate
+secrets. Fetch the fix and run a safe reconciliation:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/repair-web.sh
+```
+
+This preserves SSL, panel credentials and secrets. It makes the relay profile
+accessible to the `tproxy` group, reapplies valid managed profiles, restarts
+the relay, and performs read-only health checks. It does not disclose the
+client secret or derived bridge capability.
+
+To diagnose without modifying the VPS:
+
+```bash
+sudo python3 /opt/blue-mtproxy/vps/proxy-status.py
+```
+
+The output reports `caddy` and `tproxy-server` systemd status,
+`/readyz`, each `blue-mtproxy@<profile>` unit, local backend TCP reachability,
+on-disk relay/profile correspondence, and an authenticated WEB bridge GET
+over CA-validated localhost SNI (not just an unauthenticated HTTP 200).
+This **does not guarantee a successful session from Telegram**: the client
+may not implement the experimental WEB carrier, its WebView may fail, or
+the user's network may block the hostname.
+
+A hostname containing `/path` is a separate WEB address with its own
+profile/encoded link secret. Do not copy the secret from a root-hostname
+proxy into a different path proxy. See the upstream
+[WEB link/base-path specification](https://github.com/telegramdesktop/tproxy-server/blob/master/BASE_PATH.md).
+
 ## Managing sponsors
 
 Each profile has an independent 16-byte secret, public TCP MTProto port (10443 + slot), backend process, optional channel reference, official 32-hex `Ad Tag`, WEB carrier and enable toggle. The channel reference is internal metadata; a promoted channel **must** be configured with Telegram using [@MTProxyBot](https://t.me/MTProxyBot).
