@@ -50,7 +50,8 @@ class TelegramBotTests(unittest.TestCase):
         self.assertEqual(settings.get_config()["offset"], 0)
 
     def test_panel_template_compiles(self):
-        bot.app.jinja_env.get_template("manager.html")
+        from app import app as flask_app
+        flask_app.jinja_env.get_template("manager.html")
 
     def test_validation_rejects_invalid_settings(self):
         with self.assertRaises(ValueError):
