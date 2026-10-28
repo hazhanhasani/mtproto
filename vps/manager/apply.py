@@ -73,14 +73,17 @@ def reconcile():
                 changed.add(p["id"])
         relay_changed = previous != candidate
         if relay_changed:
-            atomic(PROFILES, candidate, 0o400, relay_group)
+            atomic(PROFILES, candidate, 0o640, relay_group)
         try:
+            # The relay service runs as tproxy, not root. Root-only checks
+            # cannot detect an unreadable profiles.json on service startup.
+            run("runuser", "-u", "tproxy", "--", "test", "-r", str(PROFILES))
             run("/usr/local/bin/tproxy-server",
                 "-config", "/etc/tproxy-server/config.json",
                 "-profiles-file", str(PROFILES), "-check")
         except Exception:
             if relay_changed:
-                atomic(PROFILES, previous, 0o400, relay_group)
+                atomic(PROFILES, previous, 0o640, relay_group)
             raise
 
         existing = {p.stem for p in ETC.glob("*.json")}
