@@ -174,6 +174,7 @@ class ManagementUITests(unittest.TestCase):
         self.assertIn('action="/users"', users_html)
         self.assertIn('name="label"', users_html)
         self.assertIn("UI 0.4.0", users_html)
+        self.assertIn("افزودن کاربر جدید", users_html)
 
         resp = self.post("/users", {"label": "New user via Users", "inbound_id": "main"})
         self.assertEqual(resp.status_code, 302)
@@ -185,6 +186,29 @@ class ManagementUITests(unittest.TestCase):
             state["profiles"][0]["clients"][0]["secret"],
             [p["secret"] for p in relay_profiles(state)["profiles"]],
         )
+
+    def test_global_user_quick_toggle_really_revokes_credential(self):
+        self.post("/users", {"label": "Alice", "inbound_id": "main"})
+        original = json.loads(self.statefile.read_text())
+        client = original["profiles"][0]["clients"][0]
+        users_page = self.client.get("/users", base_url=self.base).get_data(as_text=True)
+        toggle_path = f"/inbounds/main/users/{client['id']}/toggle"
+        self.assertIn(toggle_path, users_page)
+        self.assertIn("غیرفعال کردن", users_page)
+
+        response = self.post(toggle_path, {})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/users"))
+        state = json.loads(self.statefile.read_text())
+        self.assertFalse(state["profiles"][0]["clients"][0]["enabled"])
+        self.assertNotIn(client["secret"], [x["secret"]
+                          for x in relay_profiles(state)["profiles"]])
+        response = self.post(toggle_path, {})
+        self.assertEqual(response.status_code, 302)
+        state = json.loads(self.statefile.read_text())
+        self.assertTrue(state["profiles"][0]["clients"][0]["enabled"])
+        self.assertIn(client["secret"], [x["secret"]
+                      for x in relay_profiles(state)["profiles"]])
 
     def test_global_user_form_rejects_invalid_inbound_and_empty_label(self):
         for fields in (
