@@ -42,6 +42,29 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login", response.headers["Location"])
 
+    def test_unavailable_telegram_settings_do_not_break_panel(self):
+        self.client.get("/login", base_url=self.url)
+        auth = self.client.post("/login", base_url=self.url, data={
+            "username": "admin", "password": "test-safe-password",
+            "_csrf": self.csrf(),
+        })
+        self.assertEqual(auth.status_code, 302)
+        for failure in (ValueError("invalid bot file"), PermissionError("token path")):
+            with self.subTest(failure=type(failure).__name__), patch.object(
+                admin, "load_state", return_value=state()
+            ), patch.object(
+                admin, "get_bot_config", side_effect=failure
+            ), patch.object(
+                admin, "collect_diagnostics", return_value={"profiles": [], "checks": []}
+            ):
+                for url in ("/", "/inbounds", "/inbounds/main", "/users", "/settings", "/bot"):
+                    response = self.client.get(url, base_url=self.url)
+                    self.assertEqual(response.status_code, 200, url)
+                    body = response.get_data(as_text=True)
+                    self.assertIn("تنظیمات ربات کانال قابل خواندن نیست", body)
+                    self.assertNotIn("token path", body)
+                    self.assertNotIn("invalid bot file", body)
+
     def test_login_csrf_and_logout(self):
         self.assertEqual(self.client.post("/login", data={"username": "admin"},
                                           base_url=self.url).status_code, 403)

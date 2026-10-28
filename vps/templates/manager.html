@@ -35,6 +35,9 @@
       {% for category,message in get_flashed_messages(with_categories=true) %}
       <div role="alert" class="alert {{'bad' if category=='error' else 'good'}}">{{message}}</div>
       {% endfor %}
+      {% if bot_settings_error %}
+      <div role="alert" class="alert bad">تنظیمات ربات کانال قابل خواندن نیست. مدیریت اصلی پنل فعال است؛ برای اصلاح فایل ربات، مجوزها و گزارش سرویس را بررسی کنید.</div>
+      {% endif %}
       {% if section=='overview' %}
       <div class="page-heading"><div><div class="eyebrow">OVERVIEW</div><h1>داشبورد مدیریت</h1><p>نمایی از اینباندها، کاربران و سلامت شبکه در یک صفحه.</p></div><div class="heading-actions"><a class="btn primary" href="{{url_for('users')}}#add-user">+ افزودن کاربر</a><a class="btn" href="{{url_for('inbounds')}}">مدیریت اینباندها ←</a></div></div>
       <section class="metrics">
