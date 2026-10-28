@@ -58,6 +58,9 @@ if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q '^Status: activ
   ufw allow 443/tcp
   ufw allow 10443:10474/tcp
 fi
+# Prefer Ubuntu/Debian Go packages and avoid go.dev redirect errors (HTTP 404).
+# Sourcing preserves PATH if a checksum-verified alternate toolchain is used.
+source /opt/blue-mtproxy/vps/ensure-go.sh
 UPSTREAM=/opt/telegram-tproxy-server
 PIN=c8adb8b7c6b7fc46c12ae3acb68be9070c26a8e8
 if [[ ! -d "$UPSTREAM/.git" ]]; then
