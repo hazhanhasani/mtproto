@@ -11,7 +11,7 @@ from datetime import timedelta
 from time import time as current_time
 from pathlib import Path
 
-from flask import Flask, abort, flash, redirect, render_template_string, request, session, url_for
+from flask import Flask, abort, flash, redirect, render_template, render_template_string, request, session, url_for
 from werkzeug.security import check_password_hash
 
 from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
@@ -211,26 +211,63 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.get("/")
-def index():
+def render_manager(section="overview", selected_id=None):
     state = load_state()
+    report = collect_diagnostics()
+    telemetry = {p["id"]: p for p in report.get("profiles", []) if isinstance(p, dict) and "id" in p}
     services = {}
     for p in state["profiles"]:
-        proc = subprocess.run(
-            ["systemctl", "is-active", "blue-mtproxy@" + p["id"] + ".service"],
-            capture_output=True, text=True, timeout=5, check=False,
-        )
-        services[p["id"]] = proc.stdout.strip()
-    return render_template_string(
-        DASHBOARD_HTML,
-        state=state,
-        services=services,
-        cdn_only=CDN_FLAG.is_file(),
-        links={p["id"]: web_url(state["hostname"], p["secret"]) for p in state["profiles"]},
-        direct_links={p["id"]: direct_url(state["hostname"], p["secret"], 10443+p["slot"]) for p in state["profiles"]},
-        csrf=session["csrf"],
-        carriers=sorted(CARRIERS),
+        item = telemetry.get(p["id"], {})
+        status = item.get("mtproxy_service")
+        # The cached diagnostics provide definitive results; do not pretend
+        # failed/unavailable monitoring means the backend is offline.
+        services[p["id"]] = status if status in ("ok", "fail") else "unknown"
+    selected = get_profile(state, selected_id) if selected_id else None
+    user_records = [(p, c) for p in state["profiles"] for c in p.get("clients", [])]
+    total_connections = [p["active_connections"] for p in telemetry.values()
+                         if type(p.get("active_connections")) is int]
+    return render_template(
+        "manager.html", state=state, services=services, telemetry=telemetry,
+        section=section, selected=selected, users=user_records,
+        total_users=len(user_records), total_connections=(sum(total_connections)
+        if total_connections and len(total_connections) ==
+           sum(bool(p["enabled"]) for p in state["profiles"]) else None),
+        cdn_only=CDN_FLAG.is_file(), csrf=session["csrf"],
+        carriers=sorted(CARRIERS), report=report,
+        links={p["id"]: web_url(state["hostname"], p["secret"])
+               for p in state["profiles"]},
+        direct_links={p["id"]: direct_url(state["hostname"], p["secret"], 10443 + p["slot"])
+                      for p in state["profiles"]},
+        client_web_url=web_url, client_direct_url=direct_url,
     )
+
+
+@app.get("/")
+def index():
+    return render_manager()
+
+
+@app.get("/inbounds")
+def inbounds():
+    return render_manager("inbounds")
+
+
+@app.get("/inbounds/<profile_id>")
+def inbound_detail(profile_id):
+    try:
+        return render_manager("detail", profile_id)
+    except ValueError:
+        abort(404)
+
+
+@app.get("/users")
+def users():
+    return render_manager("users")
+
+
+@app.get("/settings")
+def settings_page():
+    return render_manager("settings")
 
 
 @app.post("/profiles")
@@ -279,6 +316,61 @@ def delete_profile(profile_id):
     def change(state):
         state["profiles"] = [p for p in state["profiles"] if p["id"] != profile_id]
     return mutate(change, "پروکسی حذف شد")
+
+
+def client_in_inbound(profile, client_id):
+    for c in profile.get("clients", []):
+        if c["id"] == client_id:
+            return c
+    raise ValueError("کاربر در این اینباند وجود ندارد")
+
+
+def mutate_client(change, inbound_id, message):
+    try:
+        apply_mutation(change)
+        flash(message, "success")
+    except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("inbound_detail", profile_id=inbound_id))
+
+
+@app.post("/inbounds/<profile_id>/users")
+def create_user(profile_id):
+    label = request.form.get("label", "").strip()
+    def change(state):
+        p = get_profile(state, profile_id)
+        p.setdefault("clients", []).append({
+            "id": "u" + secrets.token_hex(4),
+            "label": label or "User",
+            "secret": new_secret(),
+            "enabled": True,
+        })
+    return mutate_client(change, profile_id, "کاربر با Secret اختصاصی ساخته شد")
+
+
+@app.post("/inbounds/<profile_id>/users/<client_id>")
+def edit_user(profile_id, client_id):
+    def change(state):
+        client = client_in_inbound(get_profile(state, profile_id), client_id)
+        client["label"] = request.form.get("label", "").strip()
+        client["enabled"] = request.form.get("enabled") == "on"
+    return mutate_client(change, profile_id, "دسترسی کاربر به‌روزرسانی شد")
+
+
+@app.post("/inbounds/<profile_id>/users/<client_id>/rotate")
+def rotate_user(profile_id, client_id):
+    def change(state):
+        client_in_inbound(get_profile(state, profile_id), client_id)["secret"] = new_secret()
+    return mutate_client(change, profile_id, "Secret جدید صادر شد؛ لینک قدیمی کاربر باطل شد")
+
+
+@app.post("/inbounds/<profile_id>/users/<client_id>/delete")
+def delete_user(profile_id, client_id):
+    def change(state):
+        p = get_profile(state, profile_id)
+        client_in_inbound(p, client_id)
+        p["clients"] = [c for c in p.get("clients", []) if c["id"] != client_id]
+    return mutate_client(change, profile_id, "کاربر حذف و Secret او از سرویس خارج شد")
 
 
 @app.post("/settings/auto-update")
