@@ -29,6 +29,7 @@ except ImportError:  # direct root-owned command-line entrypoint
 STATE_PATH = Path("/var/lib/blue-mtproxy/state.json")
 RELAY_PATH = Path("/etc/tproxy-server/profiles.json")
 MAX_BRIDGE_PROBES = 6
+MAX_CONNECTION_PROBES = 12  # Bound snapshot time under the 65s systemd timeout
 
 
 def check(code, status, message):
@@ -167,7 +168,10 @@ def collect():
             "id": p["id"],
             "port": port,
             # Aggregate inbound value, never per-user or guessed traffic.
-            "active_connections": inbound_connections(p["slot"]) if socket_ok else None,
+            "active_connections": (
+                inbound_connections(p["slot"], timeout=1.2)
+                if socket_ok and index < MAX_CONNECTION_PROBES else None
+            ),
             "carrier": p.get("carrier", "websocket"),
             "mtproxy_service": "ok" if unit_ok else "fail",
             "mtproxy_tcp": "ok" if socket_ok else "fail",
@@ -177,7 +181,10 @@ def collect():
         })
     if len(eligible) > MAX_BRIDGE_PROBES:
         checks.append(check("probe_budget", "warn",
-                            "آزمون زنده WEB فقط برای شش پروفایل نخست اجرا شد"))
+                            "آزمون زنده WEB فقط برای شش اینباند نخست اجرا شد"))
+    if len(eligible) > MAX_CONNECTION_PROBES:
+        checks.append(check("stats_budget", "warn",
+                            "شمارنده اتصال فقط برای ۱۲ اینباند نخست بررسی شد؛ سایر موارد ناموجود هستند"))
     if middle_end_warning():
         checks.append(check("nat_middle_end", "warn",
                             "قطع مکرر اتصال Middle-End مشاهده شد؛ NAT و --nat-info را بررسی کنید"))
