@@ -121,6 +121,42 @@ If this does not advance, inspect the exact failing URL via
 its arguments**. Do not print passwords, secrets or session information in
 public logs.
 
+## Recovery after a complete install stops on SSL validation
+
+When the upstream installer says `Installed for https://...`, the panel's Python
+dependencies install successfully and `blue-mtproxy-panel.service` is enabled,
+the system is **already installed**. **Do not rerun the bootstrap**, because the
+installer intentionally refuses to overwrite an existing control plane.
+
+On the existing VPS, inspect the state without changing services:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main
+sudo bash /opt/blue-mtproxy/vps/ssl-status.sh
+```
+
+This script verifies each hostname's actual CA-signed TLS certificate and
+SNI via localhost, separately from the HTTP response code. It also prints
+certificate-related `journalctl -u caddy` lines if verification fails.
+A response of HTTP 404/502 is **not** a TLS certificate failure; earlier
+versions of the installer incorrectly treated it as one.
+
+Before expecting a trusted certificate, verify:
+
+- Both public domains resolve directly to the VPS IPv4; **no Cloudflare proxy**.
+- No stray IPv6 `AAAA` record points at a different/non-working server.
+- The VPS provider firewall allows *inbound* TCP 80 and 443; UFW opening
+  alone does not modify the provider firewall.
+- Caddy is active with access to its persistent certificate store.
+- If CAA DNS records exist, they permit at least one ACME issuer supported by Caddy.
+- DNS changes have propagated to public authoritative resolvers.
+
+Caddy itself retries ACME issuance in the background. Avoid rapid restarts
+or repeated new certificate requests because certificate authorities impose
+rate limits. Once DNS/firewall errors are corrected, repeat the read-only
+`ssl-status.sh` command. Credentials from the initial installation remain
+at `/root/blue-mtproxy-credentials.txt` (root-only, mode 0600).
+
 ## Managing sponsors
 
 Each profile has an independent 16-byte secret, public TCP MTProto port (10443 + slot), backend process, optional channel reference, official 32-hex `Ad Tag`, WEB carrier and enable toggle. The channel reference is internal metadata; a promoted channel **must** be configured with Telegram using [@MTProxyBot](https://t.me/MTProxyBot).
