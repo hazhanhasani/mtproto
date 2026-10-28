@@ -253,6 +253,7 @@ systemctl daemon-reload
 systemctl restart tproxy-firewall.service
 /usr/local/sbin/blue-mtproxy-apply
 systemctl enable --now blue-mtproxy-panel.service
+BLUE_DEBUG_NO_RESTART=1 bash /opt/blue-mtproxy/vps/install-debug.sh
 systemctl enable --now blue-mtproxy-update.timer
 TPROXY_HOSTNAME="$DOMAIN" TPROXY_SITE_ROOT=/srv/tproxy-site ACME_EMAIL="$EMAIL" \
   /usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
