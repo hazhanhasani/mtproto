@@ -31,13 +31,15 @@ rollback() {
   echo "Update failed, rolling back to $old" >&2
   git -C "$repo" reset --hard "$old"
   "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt" || true
+  bash "$repo/vps/panel-permissions.sh" || true
   systemctl restart blue-mtproxy-panel.service || true
 }
 trap rollback ERR
 git -C "$repo" reset --hard "$target"
-python3 -m unittest discover -s "$repo/vps/tests" -v
-bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh"
+bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh"
 "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt"
+bash "$repo/vps/panel-permissions.sh"
+"$repo/.venv/bin/python3" -m unittest discover -s "$repo/vps/tests" -v
 systemctl restart blue-mtproxy-panel.service
 for i in 1 2 3 4 5 6 7 8 9 10; do
   if curl --silent --fail --max-time 2 http://127.0.0.1:8750/healthz | grep -q '"ok":true'; then
