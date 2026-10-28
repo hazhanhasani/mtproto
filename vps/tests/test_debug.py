@@ -75,7 +75,8 @@ class DiagnosticsTests(unittest.TestCase):
             with patch.object(debug, "STATE_PATH", state):
                 # CLI wrapper catches invalid config without printing contents.
                 from io import StringIO
-                with patch("sys.stdout", new_callable=StringIO) as output:
+                with patch("sys.stdout", new_callable=StringIO) as output, \
+                     patch.object(sys, "argv", ["debug.py"]):
                     debug.main()
                 self.assertNotIn("a-secret-that-must-not-appear", output.getvalue())
                 self.assertIn("configuration", output.getvalue())
