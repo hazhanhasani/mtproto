@@ -1,7 +1,7 @@
 """Minimal root-owned UNIX socket broker for privileged proxy operations.
 
 Flask always runs with NoNewPrivileges=yes and cannot use sudo. Only the
-bluepanel UNIX UID can request two fixed operations via a group-only socket.
+bluepanel UNIX UID can request a small set of fixed operations via a group-only socket.
 No shell, arbitrary paths, flags, secrets, or input configuration are accepted.
 """
 import grp
@@ -15,11 +15,6 @@ import stat
 import struct
 import subprocess
 import sys
-
-try:
-    from .apply import reconcile
-except ImportError:  # direct systemd entrypoint
-    from apply import reconcile
 
 SOCKET_PATH = Path("/run/blue-mtproxy-control/command.sock")
 MAX_REQUEST = 256
@@ -51,7 +46,13 @@ def run_action(action):
     if action == "ping":
         return
     if action == "apply":
-        reconcile()
+        # Keep long-running reconciliation OUTSIDE the socket broker's
+        # sandbox. A fixed root-owned systemd oneshot executes and logs it.
+        subprocess.run(
+            ["/usr/bin/systemctl", "start", "blue-mtproxy-apply.service"],
+            check=True, timeout=95, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     elif action == "update":
         subprocess.run(
             ["/usr/bin/systemctl", "start", "--no-block",
