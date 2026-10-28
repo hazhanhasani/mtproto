@@ -38,7 +38,7 @@
       <div class="page-heading"><div><div class="eyebrow">OVERVIEW</div><h1>داشبورد مدیریت</h1><p>نمایی از اینباندها، کاربران و سلامت شبکه در یک صفحه.</p></div><a class="btn primary" href="{{url_for('inbounds')}}">مدیریت اینباندها <span>←</span></a></div>
       <section class="metrics">
         <div class="metric"><div class="metric-head">اینباندها <span>◇</span></div><div class="metric-value">{{state.profiles|length}}</div><div class="metric-note">{{state.profiles|selectattr('enabled')|list|length}} فعال</div></div>
-        <div class="metric"><div class="metric-head">کاربران مدیریت‌شده <span>♙</span></div><div class="metric-value">{{total_users}}</div><div class="metric-note">{{users|selectattr('1.enabled')|list|length if false else 'Secret اختصاصی و قابل قطع'}}</div></div>
+        <div class="metric"><div class="metric-head">کاربران مدیریت‌شده <span>♙</span></div><div class="metric-value">{{total_users}}</div><div class="metric-note">Secret اختصاصی و قابل قطع</div></div>
         <div class="metric"><div class="metric-head">اتصالات فعلی اینباندها <span>⤴</span></div><div class="metric-value">{{total_connections if total_connections is not none else '—'}}</div><div class="metric-note">{{'مجموع شمارنده‌های زنده MTProxy' if total_connections is not none else 'داده زنده در دسترس نیست'}}</div></div>
         <div class="metric"><div class="metric-head">مصرف کل <span>▥</span></div><div class="metric-value muted">—</div><div class="metric-note">نیازمند محاسبه‌گر ترافیک مستقل</div></div>
       </section>
