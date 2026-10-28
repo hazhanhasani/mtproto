@@ -16,6 +16,7 @@ from werkzeug.security import check_password_hash
 
 from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
 from manager.control_client import dispatch
+from manager.telemetry import format_bytes
 
 STATE = Path("/var/lib/blue-mtproxy/state.json")
 CDN_FLAG = Path("/etc/blue-mtproxy/cdn-only")
@@ -232,6 +233,10 @@ def render_manager(section="overview", selected_id=None):
         total_users=len(user_records), total_connections=(sum(total_connections)
         if total_connections and len(total_connections) ==
            sum(bool(p["enabled"]) for p in state["profiles"]) else None),
+        relay_traffic_text=format_bytes(
+            report.get("traffic", {}).get("total")
+            if isinstance(report.get("traffic"), dict) else None
+        ),
         cdn_only=CDN_FLAG.is_file(), csrf=session["csrf"],
         carriers=sorted(CARRIERS), report=report,
         links={p["id"]: web_url(state["hostname"], p["secret"])
