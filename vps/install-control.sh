@@ -55,6 +55,19 @@ for attempt in 1 2 3 4 5; do
   sleep 1
 done
 
+# Exercise the socket with the actual web service UID, without changing any
+# proxy settings. This tests permissions and IPC framing, not just the path.
+runuser -u bluepanel -- /usr/bin/python3 -c '
+import sys
+sys.path.insert(0, "/opt/blue-mtproxy/vps")
+from manager.control_client import dispatch
+dispatch("ping", timeout=8)
+' || {
+  echo "[error] The control broker did not answer an unprivileged ping." >&2
+  exit 1
+}
+echo "[ok] Verified a round-trip broker ping from bluepanel."
+
 # Remove obsolete privilege escalation, which was incompatible with the
 # panel's NoNewPrivileges=yes and never worked. Keep the web sandbox enabled.
 rm -f /etc/sudoers.d/blue-mtproxy
