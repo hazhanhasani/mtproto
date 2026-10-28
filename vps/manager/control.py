@@ -24,7 +24,7 @@ except ImportError:  # direct systemd entrypoint
 SOCKET_PATH = Path("/run/blue-mtproxy-control/command.sock")
 MAX_REQUEST = 256
 MAX_RESPONSE = 512
-ACTIONS = frozenset(("apply", "update"))
+ACTIONS = frozenset(("apply", "update", "ping"))
 
 
 def decode_request(data):
@@ -48,6 +48,8 @@ def authorize_peer(peer_uid, panel_uid):
 
 
 def run_action(action):
+    if action == "ping":
+        return
     if action == "apply":
         reconcile()
     elif action == "update":
