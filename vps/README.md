@@ -242,6 +242,61 @@ profile/encoded link secret. Do not copy the secret from a root-hostname
 proxy into a different path proxy. See the upstream
 [WEB link/base-path specification](https://github.com/telegramdesktop/tproxy-server/blob/master/BASE_PATH.md).
 
+## Administrator /debug: root-cause diagnostics without exposing secrets
+
+A standard Telegram client may report **WEB unavailable** even while Caddy
+HTTPS, the WEB bridge, and the MTProxy backend are healthy. The upstream
+[tproxy-server reference](https://github.com/telegramdesktop/tproxy-server)
+documents WEB as a proof of concept with specific Desktop/Android test clients,
+and warns that the public `t.me/webproxy` route is not generally registered.
+A normal `t.me/proxy` MTProto link is the preferred client-compatibility
+baseline; it is on TCP `10443+slot` and must be reachable in the VPS provider
+firewall. Standard Cloudflare HTTP proxying cannot forward arbitrary MTProto TCP;
+the separate Cloudflare Spectrum product is designed for L4 proxying.
+
+**After initial installation**, run this idempotent one-line updater on the
+existing VPS (it does not touch TLS, the state database or proxy secrets):
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-debug.sh
+```
+
+Sign into the admin panel and open `https://YOUR-PANEL-DOMAIN/debug`. The
+navbar also contains a **/debug** shortcut. For sharing a result, open
+`/debug.json` on the **panel** hostname. Both endpoints require an authenticated
+admin session and add `Cache-Control: no-store`. A fixed-argument, privileged,
+read-only helper collects the result; no Secret, Ad Tag, credentials, bridge
+capability, origin file contents or raw request URL is returned.
+
+Each diagnostic report includes:
+
+- local systemd readiness of Caddy, WEB Relay, and admin panel;
+- WEB Relay `/readyz` status;
+- each enabled official MTProxy backend's systemd status and local TCP port;
+- matching panel/relay backend configuration (without printing the secret);
+- an authenticated WEB bridge request over SNI-validated HTTPS (not just the
+  decoy homepage);
+- counts of recurring MTProxy Middle-End disconnections as a NAT warning;
+- explicit warnings that client compatibility and *external* TCP reachability
+  are not proven by server-side checks.
+
+The probe budget limits expensive authenticated bridge checks to the first
+six enabled profiles. For more profiles, the JSON report marks untested ones as
+`skipped` instead of falsely reporting `ok`.
+
+You can also request the JSON report locally:
+
+```bash
+sudo /usr/local/sbin/blue-mtproxy-debug
+```
+
+If server-side checks all pass but the Telegram client still says unavailable,
+test the **standard MTProto** link from a mobile data connection and verify the
+VPS provider firewall allows inbound TCP `10443` (or the profile's shown port).
+Do not change SSL or rotate secrets to diagnose client-level WEB support.
+The /debug collector cannot test a real Telegram session from the user's phone;
+a successful authenticated bridge response proves only the server bridge stage.
+
 ## Managing sponsors
 
 Each profile has an independent 16-byte secret, public TCP MTProto port (10443 + slot), backend process, optional channel reference, official 32-hex `Ad Tag`, WEB carrier and enable toggle. The channel reference is internal metadata; a promoted channel **must** be configured with Telegram using [@MTProxyBot](https://t.me/MTProxyBot).
