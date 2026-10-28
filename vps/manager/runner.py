@@ -27,6 +27,22 @@ def build_argv(profile, nat_args=""):
         "/etc/mtproxy/proxy-multi.conf",
         "-M", "1", "-C", "4096",
     ]
+    # The official backend accepts repeated -S flags. Each user can have a
+    # distinct credential and be revoked without changing the inbound owner
+    # secret. All users still share the same process/Ad Tag and aggregate stats.
+    seen = {profile["secret"]}
+    clients = profile.get("clients", [])
+    if not isinstance(clients, list) or len(clients) > 31:
+        raise ValueError("invalid client list")
+    for c in clients:
+        token = c.get("secret", "")
+        if not HEX.fullmatch(token) or token in seen:
+            raise ValueError("invalid or duplicate user secret")
+        seen.add(token)
+        if type(c.get("enabled")) is not bool:
+            raise ValueError("invalid user status")
+        if c["enabled"]:
+            cmd.extend(["-S", token])
     if tag:
         cmd.extend(["-P", tag])
     if nat_args:
