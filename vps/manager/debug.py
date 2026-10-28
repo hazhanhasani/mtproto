@@ -19,7 +19,10 @@ import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
-from model import validate
+try:
+    from .model import validate
+except ImportError:  # direct root-owned command-line entrypoint
+    from model import validate
 
 STATE_PATH = Path("/var/lib/blue-mtproxy/state.json")
 RELAY_PATH = Path("/etc/tproxy-server/profiles.json")
