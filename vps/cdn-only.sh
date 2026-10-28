@@ -13,11 +13,18 @@ TABLE=blue_proxy_cdn_only
 FLAG=/etc/blue-mtproxy/cdn-only
 CONFIG=/etc/blue-mtproxy/cdn-only.nft
 
+verify_guard() {
+  python3 /opt/blue-mtproxy/vps/verify-cdn-firewall.py
+}
+
 status() {
-  if systemctl is-active --quiet "$SERVICE" && /usr/sbin/nft list table inet "$TABLE" >/dev/null 2>&1; then
-    echo "[ok] CDN-only firewall active: public backend TCP 10443-10474 blocked; HTTPS 443 unaffected."
+  if systemctl is-active --quiet "$SERVICE" && verify_guard; then
+    echo "[ok] CDN-only firewall active: external TCP 10443-10474 blocked; HTTPS 443 unaffected."
   else
-    echo "[info] CDN-only firewall not active."
+    echo "[error] CDN-only firewall cannot be confirmed. Read-only diagnostic:"
+    systemctl is-active "$SERVICE" || true
+    /usr/sbin/nft -a list table inet "$TABLE" || true
+    return 1
   fi
   if [[ -f "$FLAG" ]]; then
     echo "[info] Admin panel labels this host as WEB/CDN-only."
@@ -81,11 +88,17 @@ WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
 systemctl enable "$SERVICE" >/dev/null
-systemctl restart "$SERVICE"
-/usr/sbin/nft list table inet "$TABLE" | grep -q '10443-10474' || {
-  echo "[error] External MTProxy port denial was not installed." >&2
+if ! systemctl restart "$SERVICE"; then
+  echo "[error] CDN-only firewall systemd service did not start." >&2
+  journalctl -u "$SERVICE" -n 24 --no-pager >&2 || true
   exit 1
-}
+fi
+if ! verify_guard; then
+  echo "[error] Rule verification failed; here is the ACTUAL nftables table for diagnosis:" >&2
+  /usr/sbin/nft -a list table inet "$TABLE" >&2 || true
+  echo "[error] Do not enable Cloudflare orange-cloud until the guard is confirmed." >&2
+  exit 1
+fi
 printf '%s\n' 'WEB_CDN_ONLY=1' > "$FLAG"
 chown root:root "$FLAG"
 chmod 0644 "$FLAG"
