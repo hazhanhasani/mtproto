@@ -27,3 +27,12 @@ document.addEventListener("input", (event) => {
     row.hidden = !rowText.includes(query);
   });
 });
+
+/* Open the exact user editor linked from the global Users table. */
+if (window.location.hash.startsWith("#user-")) {
+  const target = document.getElementById(window.location.hash.slice(1));
+  if (target && target.matches("details.user-item")) {
+    target.open = true;
+    target.scrollIntoView({block: "center", behavior: "instant"});
+  }
+}
