@@ -62,6 +62,43 @@ def health():
     return {"ok": True}
 
 
+def collect_diagnostics():
+    """Read-only, fixed-argument privileged helper; never surface raw stderr."""
+    try:
+        proc = subprocess.run(
+            ["sudo", "-n", "/usr/local/sbin/blue-mtproxy-debug"],
+            capture_output=True, text=True, timeout=38, check=False,
+        )
+        if proc.returncode != 0 or len(proc.stdout) > 30000:
+            raise RuntimeError("debug helper returned an error")
+        report = json.loads(proc.stdout)
+        if report.get("schema") != 1 or not isinstance(report.get("checks"), list):
+            raise ValueError("invalid diagnostic schema")
+        return report
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+        return {
+            "schema": 1, "overall": "fail",
+            "checks": [{"code": "helper", "status": "fail",
+                        "message": "عیب‌یاب اجرا نشد؛ sudoers و سرویس پنل را بررسی کنید"}],
+            "profiles": [],
+            "note": "برای بررسی خطا از دستور sudo bash /opt/blue-mtproxy/vps/install-debug.sh استفاده کنید.",
+        }
+
+
+@app.get("/debug")
+def debug_dashboard():
+    report = collect_diagnostics()
+    return render_template_string(
+        DEBUG_HTML, report=report,
+        checks=report.get("checks", []), profiles=report.get("profiles", []),
+    )
+
+
+@app.get("/debug.json")
+def debug_json():
+    return collect_diagnostics()
+
+
 def fresh_token():
     session["csrf"] = secrets.token_urlsafe(32)
     return session["csrf"]
@@ -304,6 +341,7 @@ DASHBOARD_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Blue Proxy Manager</title>
 <style>""" + STYLE + """</style></head><body><main class="shell">
 <nav><div><div class="logo"><span class="mark">B</span>Blue Proxy Manager</div><div class="sub">WEB Proxy · VPS Control Center</div></div>
+<div class="actions"><a href="{{url_for('debug_dashboard')}}" class="pill">🩺 /debug</a></div>
 <form action="{{url_for('logout')}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="secondary">خروج امن</button></form></nav>
 <h1>داشبورد مدیریت</h1><p class="sub">مدیریت مستقل Secret، کانال اسپانسر و Ad Tag در یک سرور</p>
 {% for category,message in get_flashed_messages(with_categories=true) %}<div class="notice {{ 'error' if category=='error' else '' }}">{{message}}</div>{% endfor %}
@@ -350,4 +388,57 @@ DASHBOARD_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset
 </section><div class="notice">
 کانال اسپانسر توسط Telegram و Ad Tag رسمی نمایش داده می‌شود؛ تغییر فیلد کانال به‌تنهایی باعث ثبت آن در تلگرام نخواهد شد.
 </div><small>Proxy carrier: experimental WEB. Only WEB-capable Telegram clients can use these links.</small>
+</main></body></html>"""
+
+
+DEBUG_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Blue Proxy · Debug</title>
+<style>""" + STYLE + """
+.debug-status{font-size:12px;font-weight:700;border-radius:12px;padding:4px 9px;display:inline-block}
+.debug-status.ok{background:#0f4538;color:#72edc3}
+.debug-status.fail{background:#562331;color:#ffa9aa}
+.debug-status.warn,.debug-status.skipped{background:#513d19;color:#f9d589}
+.debug-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.debug-row{display:flex;justify-content:space-between;align-items:center;gap:12px;
+           border-bottom:1px solid #25314b;padding:12px 0}
+.debug-row:last-child{border-bottom:0}
+@media(max-width:760px){.debug-grid{grid-template-columns:1fr}}
+</style></head><body><main class="shell">
+<nav><div class="logo"><span class="mark">B</span>Blue Proxy /debug</div>
+<div class="actions"><a href="{{url_for('index')}}">بازگشت به پنل</a><a href="{{url_for('debug_json')}}" class="pill">گزارش JSON بدون Secret</a></div></nav>
+<h1>عیب‌یابی اتصال پروکسی</h1>
+<p class="sub">بررسی مستقیم سرویس‌ها، WEB Bridge و MTProxy؛ بدون تغییر تنظیمات یا افشای Secret</p>
+<div class="notice">WEB یک پروتکل آزمایشی است. حتی اگر تمامی آزمون‌های سرور سالم باشند،
+پشتیبانی کلاینت تلگرام و اتصال واقعی آن هنوز باید جداگانه آزمایش شود.
+برای استفاده عمومی، لینک MTProto استاندارد را نیز امتحان کنید.</div>
+<section class="card">
+<div class="header"><h2>وضعیت سرور</h2><span class="debug-status {{report.overall}}">
+{{ 'نیازمند بررسی' if report.overall=='fail' else 'بررسی سرور انجام شد؛ اتصال کلاینت تأیید نشده' }}</span></div>
+{% for item in checks %}
+<div class="debug-row"><div><strong>{{item.code}}</strong><div class="sub">{{item.message}}</div></div>
+<span class="debug-status {{item.status}}">{{item.status}}</span></div>
+{% endfor %}
+</section>
+<h2>پروفایل‌ها</h2>
+<section class="debug-grid">
+{% for p in profiles %}
+<article class="card">
+<div class="header"><strong>{{p.id}}</strong><span class="pill">{{p.carrier}}</span></div>
+<p class="sub">پورت MTProto: {{p.port}}</p>
+{% for key,title in [('mtproxy_service','سرویس MTProxy'),('mtproxy_tcp','اتصال TCP داخلی'),
+                     ('relay_config','هماهنگی Relay و Secret'),('web_bridge','WEB Bridge احراز هویت‌شده')] %}
+<div class="debug-row"><span>{{title}}</span>
+<span class="debug-status {{p[key]}}">{{p[key]}}</span></div>
+{% endfor %}
+<div class="sub">Ad Tag: {{'ثبت شده در پنل (نمایش اسپانسر تأیید نشده)' if p.ad_tag_configured else 'تنظیم نشده'}}</div>
+</article>
+{% endfor %}
+</section>
+<div class="card" style="margin-top:18px">
+<h2>اشتراک‌گذاری گزارش امن</h2>
+<p class="sub">نسخه JSON برای ارسال نتیجهٔ عیب‌یابی آماده است. اطلاعات ورود، Secret، آدرس
+احراز هویت WEB و فایل‌های تنظیمات در گزارش نمایش داده نمی‌شوند.</p>
+<a href="{{url_for('debug_json')}}">بازکردن /debug.json</a>
+<p class="sub">زمان بررسی: {{report.get('generated_at','—')}} · {{report.note}}</p>
+</div>
 </main></body></html>"""
