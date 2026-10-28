@@ -1,0 +1,22 @@
+{
+  "name": "blue-telegram-webproxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Experimental Telegram WEB proxy transport on Cloudflare Workers.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "setup": "node scripts/setup.mjs",
+    "publish-secrets": "node scripts/publish-secrets.mjs",
+    "probe": "node scripts/probe.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/index.js && node --check src/vendor/telegram_webproxy.js && npm test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
