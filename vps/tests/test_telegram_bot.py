@@ -108,6 +108,31 @@ class TelegramBotTests(unittest.TestCase):
         self.assertEqual(settings.get_config()["schedule_sent_slots"], {})
         self.assertEqual(settings.get_config()["scheduled_inbounds"], ["main"])
 
+    def test_panel_schedule_control_requires_csrf_and_active_inbound(self):
+        import app as admin
+        admin.app.config.update(TESTING=True)
+        client = admin.app.test_client()
+        url = "https://panel.example.com"
+        with client.session_transaction(base_url=url) as session:
+            session["authenticated"] = True
+            session["csrf"] = "safe-csrf-value"
+        with patch.object(admin, "load_state", return_value=STATE), patch.object(
+                admin, "schedule_inbound") as schedule:
+            failed = client.post("/bot/schedule/main", base_url=url, data={
+                "_csrf": "wrong", "enabled": "1"})
+            self.assertEqual(failed.status_code, 403)
+            enabled = client.post("/bot/schedule/main", base_url=url, data={
+                "_csrf": "safe-csrf-value", "enabled": "1"})
+            self.assertEqual(enabled.status_code, 302)
+            schedule.assert_called_once_with("main", True)
+
+        with patch.object(admin, "load_state", return_value={"profiles": [
+                {**PROFILE, "enabled": False}]}), patch.object(
+                admin, "schedule_inbound") as schedule:
+            client.post("/bot/schedule/main", base_url=url, data={
+                "_csrf": "safe-csrf-value", "enabled": "1"})
+            schedule.assert_not_called()
+
     def test_cron_installer_has_persistent_half_hour_timer(self):
         installer = (ROOT / "install-bot.sh").read_text(encoding="utf-8")
         self.assertIn("OnCalendar=*-*-* *:00,30:00", installer)
