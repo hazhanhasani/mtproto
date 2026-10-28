@@ -194,11 +194,8 @@ exec /bin/bash /opt/blue-mtproxy/vps/update.sh "$@"
 SH
 chmod 0755 /usr/local/sbin/blue-mtproxy-apply /usr/local/sbin/blue-mtproxy-update
 
-cat > /etc/sudoers.d/blue-mtproxy <<'SUDO'
-bluepanel ALL=(root) NOPASSWD: /usr/local/sbin/blue-mtproxy-apply, /usr/bin/systemctl start --no-block blue-mtproxy-update-force.service
-SUDO
-chmod 0440 /etc/sudoers.d/blue-mtproxy
-visudo -cf /etc/sudoers.d/blue-mtproxy
+# No sudo policy for the web process: NoNewPrivileges stays enabled.
+# A constrained root control service provides the only privileged operations.
 
 # Keep the official proxy domain routing untouched; the panel gets its own HTTPS vhost.
 if ! grep -Fq "$PANEL {" /etc/caddy/Caddyfile; then
@@ -254,6 +251,7 @@ UNIT
 systemctl daemon-reload
 systemctl restart tproxy-firewall.service
 /usr/local/sbin/blue-mtproxy-apply
+BLUE_CONTROL_NO_RESTART=1 bash /opt/blue-mtproxy/vps/install-control.sh
 systemctl enable --now blue-mtproxy-panel.service
 BLUE_DEBUG_NO_RESTART=1 bash /opt/blue-mtproxy/vps/install-debug.sh
 systemctl enable --now blue-mtproxy-update.timer
