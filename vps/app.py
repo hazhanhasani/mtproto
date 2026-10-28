@@ -31,6 +31,7 @@ app.config.update(
     MAX_CONTENT_LENGTH=32768,
 )
 FAILURES = {}
+PANEL_UI_VERSION = "0.4.0"  # distinguish deployed UI from older single-page panel
 
 
 @app.after_request
@@ -228,7 +229,7 @@ def render_manager(section="overview", selected_id=None):
     total_connections = [p["active_connections"] for p in telemetry.values()
                          if type(p.get("active_connections")) is int]
     return render_template(
-        "manager.html", state=state, services=services, telemetry=telemetry,
+        "manager.html", ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
         section=section, selected=selected, users=user_records,
         total_users=len(user_records), total_connections=(sum(total_connections)
         if total_connections and len(total_connections) ==
@@ -273,6 +274,15 @@ def users():
 @app.get("/settings")
 def settings_page():
     return render_manager("settings")
+
+
+@app.get("/version")
+def panel_version():
+    """Authenticated, cache-free feature marker to confirm VPS deployment."""
+    return {"ui_version": PANEL_UI_VERSION, "features": [
+        "inbounds", "inbound-clients", "global-user-create",
+        "active-inbound-connections", "web-aggregate-traffic",
+    ]}
 
 
 @app.post("/profiles")
@@ -339,18 +349,42 @@ def mutate_client(change, inbound_id, message):
     return redirect(url_for("inbound_detail", profile_id=inbound_id))
 
 
+def add_inbound_client(state, profile_id, label):
+    """Create a user under an existing inbound; model validation enforces limits."""
+    label = label.strip()
+    if not (1 <= len(label) <= 80):
+        raise ValueError("نام کاربر باید بین ۱ تا ۸۰ نویسه باشد")
+    inbound = get_profile(state, profile_id)
+    inbound.setdefault("clients", []).append({
+        "id": "u" + secrets.token_hex(4),
+        "label": label,
+        "secret": new_secret(),
+        "enabled": True,
+    })
+
+
 @app.post("/inbounds/<profile_id>/users")
 def create_user(profile_id):
-    label = request.form.get("label", "").strip()
-    def change(state):
-        p = get_profile(state, profile_id)
-        p.setdefault("clients", []).append({
-            "id": "u" + secrets.token_hex(4),
-            "label": label or "User",
-            "secret": new_secret(),
-            "enabled": True,
-        })
-    return mutate_client(change, profile_id, "کاربر با Secret اختصاصی ساخته شد")
+    label = request.form.get("label", "")
+    return mutate_client(
+        lambda state: add_inbound_client(state, profile_id, label),
+        profile_id,
+        "کاربر با Secret اختصاصی ساخته شد",
+    )
+
+
+@app.post("/users")
+def create_user_global():
+    """Allow user creation directly from the global Users page."""
+    profile_id = request.form.get("inbound_id", "")
+    label = request.form.get("label", "")
+    try:
+        apply_mutation(lambda state: add_inbound_client(state, profile_id, label))
+        flash("کاربر به اینباند انتخاب‌شده اضافه شد؛ لینک اختصاصی در جزئیات اینباند قرار دارد", "success")
+        return redirect(url_for("inbound_detail", profile_id=profile_id))
+    except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("users"))
 
 
 @app.post("/inbounds/<profile_id>/users/<client_id>")
