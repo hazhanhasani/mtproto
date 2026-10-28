@@ -65,6 +65,28 @@ def ensure_group_readable(path, group_gid):
         raise PermissionError("service configuration not group-readable")
 
 
+def ensure_private_profiles(path):
+    """Enforce the reference WEB relay's strict non-credential file policy.
+
+    The relay's -check invocation reads this path directly, not through
+    systemd LoadCredential. Its upstream config parser rejects any group or
+    other permissions (mode & 0o077 != 0). The real tproxy systemd service
+    receives this root-only source via LoadCredential; never loosen it to
+    0640 root:tproxy as required by MTProxy runtime JSON files.
+    """
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0:
+        raise PermissionError("unexpected WEB relay profiles file owner/type")
+    if info.st_gid != 0:
+        os.chown(path, 0, 0)
+    if stat.S_IMODE(info.st_mode) != 0o400:
+        os.chmod(path, 0o400)
+    verified = os.lstat(path)
+    if (not stat.S_ISREG(verified.st_mode) or verified.st_uid != 0
+            or stat.S_IMODE(verified.st_mode) != 0o400 or verified.st_gid != 0):
+        raise PermissionError("WEB relay profiles must be private (0400 root:root)")
+
+
 def reconcile():
     if os.geteuid() != 0:
         raise PermissionError("apply must run as root")
@@ -84,7 +106,6 @@ def reconcile():
         previous = PROFILES.read_bytes()
         candidate = dump(relay_profiles(state))
         runtime_group = __import__("grp").getgrnam("mtproxy").gr_gid
-        relay_group = __import__("grp").getgrnam("tproxy").gr_gid
         # mtproxy must traverse /etc/blue-mtproxy before it can read
         # runtime/<id>.json. The parent contains panel.env (0640 root:bluepanel);
         # 0711 permits traversal without exposing the directory listing/files.
@@ -107,17 +128,19 @@ def reconcile():
             ensure_group_readable(runtime_path, runtime_group)
         relay_changed = previous != candidate
         if relay_changed:
-            atomic(PROFILES, candidate, 0o640, relay_group)
+            atomic(PROFILES, candidate, 0o400)
         try:
-            # Validate group-readability without PAM/runuser inside the
-            # sandboxed management oneshot. systemd manages the relay user.
-            ensure_group_readable(PROFILES, relay_group)
+            # The reference relay requires zero group/other permission bits
+            # when -check reads this file directly. systemd LoadCredential
+            # passes the private file to the unprivileged relay on startup.
+            ensure_private_profiles(PROFILES)
             run("/usr/local/bin/tproxy-server",
                 "-config", "/etc/tproxy-server/config.json",
                 "-profiles-file", str(PROFILES), "-check")
         except Exception:
             if relay_changed:
-                atomic(PROFILES, previous, 0o640, relay_group)
+                atomic(PROFILES, previous, 0o400)
+                ensure_private_profiles(PROFILES)
             raise
 
         existing = {p.stem for p in ETC.glob("*.json")}
