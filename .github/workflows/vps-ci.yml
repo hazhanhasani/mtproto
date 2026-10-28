@@ -17,5 +17,5 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r vps/requirements.txt
       - run: python -m compileall -q vps
-      - run: bash -n vps/bootstrap.sh vps/install.sh vps/update.sh vps/fetch-telegram-config.sh vps/ensure-go.sh vps/ssl-status.sh vps/panel-permissions.sh vps/repair-panel.sh vps/repair-web.sh vps/repair-backend.sh vps/install-debug.sh
+      - run: bash -n vps/bootstrap.sh vps/install.sh vps/update.sh vps/fetch-telegram-config.sh vps/ensure-go.sh vps/ssl-status.sh vps/panel-permissions.sh vps/repair-panel.sh vps/repair-web.sh vps/repair-backend.sh vps/install-debug.sh vps/install-control.sh
       - run: python -m unittest discover -s vps/tests -v
