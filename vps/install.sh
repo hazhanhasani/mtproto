@@ -65,6 +65,7 @@ if [[ ! -d "$UPSTREAM/.git" ]]; then
 fi
 git -C "$UPSTREAM" fetch origin "$PIN"
 git -C "$UPSTREAM" checkout --detach "$PIN"
+python3 /opt/blue-mtproxy/vps/patch_upstream.py "$UPSTREAM/deploy/install-mtproxy.sh"
 SECRET="$(openssl rand -hex 16)"
 ADMIN_PASSWORD="$(openssl rand -base64 27 | tr -d '\n')"
 
