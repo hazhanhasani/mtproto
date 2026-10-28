@@ -13,6 +13,7 @@ os.environ.setdefault("PANEL_SECRET_KEY", "test-bot-session-key-" + "x" * 32)
 os.environ.setdefault("PANEL_ADMIN_PASSWORD_HASH", "test-not-used")
 from manager import bot_config as settings
 from manager import telegram_bot as bot
+from manager import cron_publish
 
 TOKEN = "123456789:" + "A" * 35
 PROFILE = {"id": "main", "slot": 0, "label": "Main & Fast",
@@ -42,6 +43,103 @@ class TelegramBotTests(unittest.TestCase):
         self.assertEqual(new["token"], TOKEN)
         self.assertEqual(new["posted"], ["main", "p123"])
         self.assertEqual(settings.CONFIG.stat().st_mode & 0o777, 0o600)
+
+    def test_migrate_pre_cron_configuration(self):
+        legacy = {"token": TOKEN, "admin_id": 123, "channel_id": "@testchannel",
+                  "auto_publish": False, "posted": [], "offset": 12}
+        settings.CONFIG.write_text(__import__("json").dumps(legacy))
+        migrated = settings.get_config()
+        self.assertEqual(migrated["scheduled_inbounds"], [])
+        self.assertEqual(migrated["schedule_sent_slots"], {})
+        self.assertEqual(migrated["offset"], 12)
+
+    def test_schedule_toggle_requires_configured_bot_and_valid_id(self):
+        with self.assertRaises(ValueError):
+            settings.schedule_inbound("main", True)
+        self.configured()
+        settings.schedule_inbound("main", True)
+        self.assertEqual(settings.get_config()["scheduled_inbounds"], ["main"])
+        with self.assertRaises(ValueError):
+            settings.schedule_inbound("../../etc/passwd", True)
+        settings.schedule_inbound("main", False)
+        self.assertEqual(settings.get_config()["scheduled_inbounds"], [])
+
+    def test_half_hour_cron_dedupe_and_next_slot(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        with patch.object(cron_publish, "load_state", return_value=STATE), patch.object(
+                cron_publish, "publish", return_value=55) as publish:
+            self.assertEqual(cron_publish.publish_due(now=3600), 1)
+            self.assertEqual(settings.get_config()["schedule_sent_slots"], {"main": 2})
+            self.assertEqual(cron_publish.publish_due(now=3650), 0)
+            self.assertEqual(cron_publish.publish_due(now=5400), 1)
+        self.assertEqual(publish.call_count, 2)
+        self.assertEqual(settings.get_config()["schedule_sent_slots"], {"main": 3})
+
+    def test_half_hour_cron_skips_disabled_and_removed_inbounds(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        disabled = {"hostname": STATE["hostname"],
+                    "profiles": [{**PROFILE, "enabled": False}]}
+        with patch.object(cron_publish, "load_state", return_value=disabled), patch.object(
+                cron_publish, "publish") as publish:
+            self.assertEqual(cron_publish.publish_due(now=3600), 0)
+        publish.assert_not_called()
+        with patch.object(cron_publish, "load_state", return_value={
+                "hostname": STATE["hostname"], "profiles": []}), patch.object(
+                cron_publish, "publish") as publish:
+            self.assertEqual(cron_publish.publish_due(now=3600), 0)
+        publish.assert_not_called()
+
+    def test_half_hour_cron_failure_does_not_mark_delivered(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        with patch.object(cron_publish, "load_state", return_value=STATE), patch.object(
+                cron_publish, "publish", side_effect=bot.TelegramError("network fail")):
+            with self.assertRaises(RuntimeError):
+                cron_publish.publish_due(now=3600)
+        self.assertEqual(settings.get_config()["schedule_sent_slots"], {})
+
+    def test_channel_change_resets_cron_dedupe(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        settings.update_config(lambda data: data["schedule_sent_slots"].update({"main": 15}))
+        settings.configure("", "123", "@newchannel", False, ["main"])
+        self.assertEqual(settings.get_config()["schedule_sent_slots"], {})
+        self.assertEqual(settings.get_config()["scheduled_inbounds"], ["main"])
+
+    def test_panel_schedule_control_requires_csrf_and_active_inbound(self):
+        import app as admin
+        admin.app.config.update(TESTING=True)
+        client = admin.app.test_client()
+        url = "https://panel.example.com"
+        with client.session_transaction(base_url=url) as session:
+            session["authenticated"] = True
+            session["csrf"] = "safe-csrf-value"
+        with patch.object(admin, "load_state", return_value=STATE), patch.object(
+                admin, "schedule_inbound") as schedule:
+            failed = client.post("/bot/schedule/main", base_url=url, data={
+                "_csrf": "wrong", "enabled": "1"})
+            self.assertEqual(failed.status_code, 403)
+            enabled = client.post("/bot/schedule/main", base_url=url, data={
+                "_csrf": "safe-csrf-value", "enabled": "1"})
+            self.assertEqual(enabled.status_code, 302)
+            schedule.assert_called_once_with("main", True)
+
+        with patch.object(admin, "load_state", return_value={"profiles": [
+                {**PROFILE, "enabled": False}]}), patch.object(
+                admin, "schedule_inbound") as schedule:
+            client.post("/bot/schedule/main", base_url=url, data={
+                "_csrf": "safe-csrf-value", "enabled": "1"})
+            schedule.assert_not_called()
+
+    def test_cron_installer_has_persistent_half_hour_timer(self):
+        installer = (ROOT / "install-bot.sh").read_text(encoding="utf-8")
+        self.assertIn("OnCalendar=*-*-* *:00,30:00", installer)
+        self.assertIn("Persistent=true", installer)
+        self.assertIn("User=bluepanel", installer)
+        self.assertIn("manager.cron_publish", installer)
+        self.assertIn("systemctl enable --now blue-mtproxy-telegram-cron.timer", installer)
 
     def test_new_bot_token_resets_update_cursor(self):
         self.configured()

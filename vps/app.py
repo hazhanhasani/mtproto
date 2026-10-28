@@ -16,7 +16,12 @@ from werkzeug.security import check_password_hash
 
 from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
 from manager.control_client import dispatch
-from manager.bot_config import configure as configure_bot, get_config as get_bot_config, ready as bot_ready
+from manager.bot_config import (
+    configure as configure_bot,
+    get_config as get_bot_config,
+    ready as bot_ready,
+    schedule_inbound,
+)
 from manager.telemetry import format_bytes
 
 STATE = Path("/var/lib/blue-mtproxy/state.json")
@@ -241,12 +246,13 @@ def render_manager(section="overview", selected_id=None):
             "auto_publish": bot_data["auto_publish"],
             "token_set": bool(bot_data["token"]),
             "ready": bot_ready(bot_data),
+            "scheduled_inbounds": bot_data["scheduled_inbounds"],
         }
     except (ValueError, OSError, UnicodeError, TypeError, KeyError):
         bot_settings_error = True
         bot_view = {
             "admin_id": 0, "channel_id": "", "auto_publish": False,
-            "token_set": False, "ready": False,
+            "token_set": False, "ready": False, "scheduled_inbounds": [],
         }
     return render_template(
         "manager.html", bot=bot_view, bot_settings_error=bot_settings_error, ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
@@ -307,6 +313,7 @@ def panel_version():
     return {"ui_version": PANEL_UI_VERSION, "features": [
         "inbounds", "inbound-clients", "global-user-create",
         "active-inbound-connections", "web-aggregate-traffic", "telegram-channel-bot",
+        "telegram-half-hour-cron",
     ]}
 
 
@@ -463,6 +470,24 @@ def save_bot_config():
             [p["id"] for p in state["profiles"]],
         )
         flash("تنظیمات ربات ذخیره شد. ربات باید در کانال دسترسی ارسال پست داشته باشد.", "success")
+    except (ValueError, OSError) as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("bot_page"))
+
+
+@app.post("/bot/schedule/<profile_id>")
+def schedule_channel_posts(profile_id):
+    try:
+        selected = get_profile(load_state(), profile_id)
+        enabled = request.form.get("enabled") == "1"
+        if enabled and not selected["enabled"]:
+            raise ValueError("اینباند غیرفعال قابل زمان‌بندی نیست")
+        schedule_inbound(profile_id, enabled)
+        flash(
+            "ارسال هر ۳۰ دقیقه برای این اینباند فعال شد" if enabled
+            else "ارسال زمان‌بندی‌شده این اینباند متوقف شد",
+            "success",
+        )
     except (ValueError, OSError) as exc:
         flash(str(exc), "error")
     return redirect(url_for("bot_page"))
