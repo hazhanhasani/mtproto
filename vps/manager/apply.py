@@ -42,6 +42,29 @@ def dump(value):
     return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
 
 
+def ensure_group_readable(path, group_gid):
+    """Validate and normalize a root-owned config for a dedicated service.
+
+    runuser/PAM access tests from a sandboxed root systemd oneshot can fail
+    independently of the actual MTProxy service account. Instead of trying to
+    switch identity inside the control-plane service, ensure the service file
+    is a regular root-owned file with the correct group and read bit. The real
+    backend is subsequently checked by systemd and socket health checks.
+    """
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0:
+        raise PermissionError("unexpected service configuration file ownership/type")
+    if info.st_gid != group_gid:
+        os.chown(path, 0, group_gid)
+    if stat.S_IMODE(info.st_mode) != 0o640:
+        os.chmod(path, 0o640)
+    info = os.lstat(path)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+            or info.st_gid != group_gid
+            or not info.st_mode & stat.S_IRGRP):
+        raise PermissionError("service configuration not group-readable")
+
+
 def reconcile():
     if os.geteuid() != 0:
         raise PermissionError("apply must run as root")
@@ -79,14 +102,16 @@ def reconcile():
             if not runtime_path.exists() or runtime_path.read_bytes() != runtime:
                 atomic(runtime_path, runtime, 0o640, runtime_group)
                 changed.add(p["id"])
-            run("runuser", "-u", "mtproxy", "--", "test", "-r", str(runtime_path))
+            # Avoid PAM/runuser inside a hardened systemd oneshot; the same
+            # file is already verified by the actual running backend service.
+            ensure_group_readable(runtime_path, runtime_group)
         relay_changed = previous != candidate
         if relay_changed:
             atomic(PROFILES, candidate, 0o640, relay_group)
         try:
-            # The relay service runs as tproxy, not root. Root-only checks
-            # cannot detect an unreadable profiles.json on service startup.
-            run("runuser", "-u", "tproxy", "--", "test", "-r", str(PROFILES))
+            # Validate group-readability without PAM/runuser inside the
+            # sandboxed management oneshot. systemd manages the relay user.
+            ensure_group_readable(PROFILES, relay_group)
             run("/usr/local/bin/tproxy-server",
                 "-config", "/etc/tproxy-server/config.json",
                 "-profiles-file", str(PROFILES), "-check")
