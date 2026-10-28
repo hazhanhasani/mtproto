@@ -37,7 +37,7 @@ ADMIN_PASSWORD="$(openssl rand -base64 27 | tr -d '\n')"
 # The pinned official installer prompts for the secret on stdin rather than argv.
 # The proxy hostname must resolve DIRECTLY to this VPS, not via Cloudflare HTTP CDN.
 printf '%s\n' "$SECRET" | bash "$UPSTREAM/deploy/install.sh" \
-  --hostname "$DOMAIN" --email "$EMAIL" --site-dir /opt/blue-mtproxy/vps/site
+  --hostname "$DOMAIN" --email "$EMAIL" --base-path none --site-dir /opt/blue-mtproxy/vps/site
 
 id mtproxy >/dev/null
 id tproxy >/dev/null
