@@ -19,3 +19,5 @@ jobs:
       - run: python -m compileall -q vps
       - run: bash -n vps/bootstrap.sh vps/install.sh vps/update.sh vps/fetch-telegram-config.sh vps/ensure-go.sh vps/ssl-status.sh vps/panel-permissions.sh vps/repair-panel.sh vps/repair-web.sh vps/repair-backend.sh vps/install-debug.sh vps/install-control.sh vps/install-bot.sh vps/cdn-only.sh
       - run: python -m unittest discover -s vps/tests -v
+      - name: Verify VPS test suite as root (matches production updater)
+        run: sudo -E "$(command -v python)" -m unittest discover -s vps/tests -v
