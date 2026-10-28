@@ -6,7 +6,7 @@ The new authenticated Persian/RTL panel includes distinct pages:
 
 - `/` — responsive dashboard, inbound counts, managed-user counts, live
   **aggregate** active connection counters where the official backend stats
-  endpoint responds, and read-only service health.
+  endpoint responds, read-only service health, and actual **global WEB traffic** since the relay process started.
 - `/inbounds` — all inbound profiles, local backend ports, sponsor status
   and live connection counters. Each inbound remains an independent official
   MTProxy process and Ad Tag.
@@ -42,7 +42,8 @@ WEB profiles. This is a strict validation rule, not a user quota.
 | Enable, disable, revoke or rotate individual user | Enforced through MTProxy -S and relay profile reconciliation |
 | Inbound backend active connections | Read-only from official `127.0.0.1:8888+slot/stats` `total_special_connections` when available |
 | Per-user active connections / online | **Not available** in stock MTProxy/WEB relay |
-| Accurate byte consumption per inbound/user | **Not available**, panel displays — rather than fake usage |
+| Total WEB relay bytes | Actual `tproxy_bytes_up_total` + `tproxy_bytes_down_total` from upstream loopback `/metrics`, **all inbounds combined and reset when relay restarts** |
+| Accurate bytes by specific inbound or user | **Not available** in stock backend, displayed as — rather than invented data |
 | Per-user traffic quota / expiry enforcement | **Not implemented**, do not bill clients or promise caps based on this panel |
 | WEB client compatibility | Still experimental; requires a supported custom Telegram client |
 | CDN-only | Preserved. Only HTTPS/WSS public 443, internal MTProxy ports remain blocked externally |
