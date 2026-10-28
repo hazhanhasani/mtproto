@@ -157,6 +157,45 @@ rate limits. Once DNS/firewall errors are corrected, repeat the read-only
 `ssl-status.sh` command. Credentials from the initial installation remain
 at `/root/blue-mtproxy-credentials.txt` (root-only, mode 0600).
 
+## Repair a healthy HTTPS certificate with an HTTP 502 panel
+
+If `ssl-status.sh` shows:
+
+```text
+[TLS OK] proxy.example.com -> trusted certificate; HTTP status 200
+[TLS OK] panel.example.com -> trusted certificate; HTTP status 502
+```
+
+**Both TLS certificates are valid; the remaining failure is the admin panel
+upstream.** The initial installer used `umask 077` to build
+`/opt/blue-mtproxy/.venv` as root, leaving `0700` directories and
+executable scripts inaccessible to the `bluepanel` service user. Caddy thus
+cannot reach Gunicorn, even if `systemctl is-active` briefly prints `active`
+during a restart loop.
+
+Do **not** rerun the installer, delete certificates or reset the VPS. On the
+already-installed VPS run:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/repair-panel.sh
+```
+
+The read/write separation is preserved: the helper keeps the Python virtualenv
+**root-owned**, grants its service group only read/execute access, restarts only
+the panel systemd unit, checks `http://127.0.0.1:8750/healthz` and reports
+both domains' TLS status. It never modifies the state database, user secrets,
+Caddy certificates or proxy services. The main installer and updater now
+maintain these permissions automatically after installation/dependency updates.
+
+If the panel still fails, share this **non-sensitive** diagnostic output, not
+the credentials file or your Secret:
+
+```bash
+sudo systemctl --no-pager --full status blue-mtproxy-panel
+sudo journalctl -u blue-mtproxy-panel -n 45 --no-pager
+curl --noproxy '*' -i --max-time 4 http://127.0.0.1:8750/healthz
+```
+
 ## Managing sponsors
 
 Each profile has an independent 16-byte secret, public TCP MTProto port (10443 + slot), backend process, optional channel reference, official 32-hex `Ad Tag`, WEB carrier and enable toggle. The channel reference is internal metadata; a promoted channel **must** be configured with Telegram using [@MTProxyBot](https://t.me/MTProxyBot).
