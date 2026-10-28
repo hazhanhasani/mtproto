@@ -31,14 +31,38 @@ PrivateTmp=yes
 PrivateDevices=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/run/blue-mtproxy-control /run/lock /etc/blue-mtproxy /etc/tproxy-server /var/lib/blue-mtproxy
+ReadWritePaths=/run/blue-mtproxy-control
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-# The reconciler verifies file readability as tproxy/mtproxy via runuser.
-# CAP_SETUID and CAP_SETGID are needed for *dropping* from root to those IDs.
-CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID
+# This service only authenticates peers and invokes fixed systemd units.
+CapabilityBoundingSet=CAP_CHOWN
 UMask=0077
 [Install]
 WantedBy=multi-user.target
+UNIT
+
+# The small UNIX broker stays heavily sandboxed. Reconciliation is instead
+# an independently audited systemd oneshot with narrowly scoped write paths.
+# systemctl start waits for a oneshot result; a failed reconcile propagates to
+# the panel and can be diagnosed via this unit's journal.
+cat > /etc/systemd/system/blue-mtproxy-apply.service <<'UNIT'
+[Unit]
+Description=Blue Proxy Manager apply validated proxy configuration
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/blue-mtproxy-apply
+TimeoutStartSec=95s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/blue-mtproxy /etc/tproxy-server /etc/systemd/system /var/lib/blue-mtproxy /run/lock
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
 UNIT
 
 systemctl daemon-reload
@@ -69,6 +93,22 @@ dispatch("ping", timeout=8)
   exit 1
 }
 echo "[ok] Verified a round-trip broker ping from bluepanel."
+
+# Verify the ENTIRE route (panel UID -> broker -> root systemd oneshot).
+# Existing desired state is re-applied, without rotating secrets. Fail closed
+# rather than declaring the installation healthy after a ping-only check.
+if ! runuser -u bluepanel -- /usr/bin/python3 -c '
+import sys
+sys.path.insert(0, "/opt/blue-mtproxy/vps")
+from manager.control_client import dispatch
+dispatch("apply", timeout=118)
+'; then
+  echo "[error] End-to-end apply failed. No client secrets were regenerated." >&2
+  echo "[diag] sudo journalctl -u blue-mtproxy-apply.service -n 45 --no-pager" >&2
+  echo "[diag] sudo systemctl show blue-mtproxy-apply.service -p Result -p ExecMainStatus" >&2
+  exit 1
+fi
+echo "[ok] Verified end-to-end apply through the dedicated systemd reconciler."
 
 # Remove obsolete privilege escalation, which was incompatible with the
 # panel's NoNewPrivileges=yes and never worked. Keep the web sandbox enabled.
