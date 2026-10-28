@@ -7,7 +7,7 @@ import secrets
 import subprocess
 import tempfile
 import time
-from datetime import timedelta
+from datetime import timedelta\nfrom time import time as current_time
 from pathlib import Path
 
 from flask import Flask, abort, flash, redirect, render_template_string, request, session, url_for
@@ -62,27 +62,42 @@ def health():
     return {"ok": True}
 
 
+DEBUG_CACHE = Path("/var/cache/blue-mtproxy-debug/report.json")
+
+
+def diagnostic_failure(code, message):
+    return {
+        "schema": 1, "overall": "fail",
+        "checks": [{"code": code, "status": "fail", "message": message}],
+        "profiles": [],
+        "note": "برای نصب سرویس مستقل عیب‌یابی، اسکریپت install-debug.sh را در VPS اجرا کنید.",
+    }
+
+
 def collect_diagnostics():
-    """Read-only, fixed-argument privileged helper; never surface raw stderr."""
+    """Read a root-published snapshot; do not attempt sudo from Flask.
+
+    NoNewPrivileges=yes intentionally blocks escalation within the web
+    process. The isolated, root-only timer executes the probes instead.
+    """
     try:
-        proc = subprocess.run(
-            ["sudo", "-n", "/usr/local/sbin/blue-mtproxy-debug"],
-            capture_output=True, text=True, timeout=38, check=False,
-        )
-        if proc.returncode != 0 or len(proc.stdout) > 30000:
-            raise RuntimeError("debug helper returned an error")
-        report = json.loads(proc.stdout)
-        if report.get("schema") != 1 or not isinstance(report.get("checks"), list):
-            raise ValueError("invalid diagnostic schema")
+        stat = DEBUG_CACHE.stat()
+        if stat.st_size > 32768:
+            return diagnostic_failure("cache_invalid", "حجم گزارش عیب‌یابی نامعتبر است")
+        if current_time() - stat.st_mtime > 300:
+            return diagnostic_failure("cache_stale", "گزارش قدیمی است؛ تایمر عیب‌یابی اجرا نمی‌شود")
+        report = json.loads(DEBUG_CACHE.read_bytes().decode("utf-8"))
+        if (report.get("schema") != 1 or
+                not isinstance(report.get("checks"), list) or
+                not isinstance(report.get("profiles"), list)):
+            return diagnostic_failure("cache_invalid", "گزارش معتبر نیست")
         return report
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-        return {
-            "schema": 1, "overall": "fail",
-            "checks": [{"code": "helper", "status": "fail",
-                        "message": "عیب‌یاب اجرا نشد؛ sudoers و سرویس پنل را بررسی کنید"}],
-            "profiles": [],
-            "note": "برای بررسی خطا از دستور sudo bash /opt/blue-mtproxy/vps/install-debug.sh استفاده کنید.",
-        }
+    except FileNotFoundError:
+        return diagnostic_failure("cache_missing", "سرویس مستقل عیب‌یابی هنوز گزارش تولید نکرده است")
+    except PermissionError:
+        return diagnostic_failure("cache_permission", "کاربر پنل اجازه خواندن گزارش را ندارد")
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return diagnostic_failure("cache_invalid", "خطا در خواندن فایل گزارش؛ ژورنال عیب‌یاب را بررسی کنید")
 
 
 @app.get("/debug")
