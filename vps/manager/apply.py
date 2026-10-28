@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import stat
 import sys
 import tempfile
 
@@ -61,6 +62,13 @@ def reconcile():
         candidate = dump(relay_profiles(state))
         runtime_group = __import__("grp").getgrnam("mtproxy").gr_gid
         relay_group = __import__("grp").getgrnam("tproxy").gr_gid
+        # mtproxy must traverse /etc/blue-mtproxy before it can read
+        # runtime/<id>.json. The parent contains panel.env (0640 root:bluepanel);
+        # 0711 permits traversal without exposing the directory listing/files.
+        parent_stat = os.lstat(ETC.parent)
+        if not stat.S_ISDIR(parent_stat.st_mode) or parent_stat.st_uid != 0:
+            raise PermissionError("unexpected runtime parent directory")
+        os.chmod(ETC.parent, 0o711)
         ETC.mkdir(parents=True, exist_ok=True)
         os.chmod(ETC, 0o750)
         os.chown(ETC, 0, runtime_group)
@@ -71,6 +79,7 @@ def reconcile():
             if not runtime_path.exists() or runtime_path.read_bytes() != runtime:
                 atomic(runtime_path, runtime, 0o640, runtime_group)
                 changed.add(p["id"])
+            run("runuser", "-u", "mtproxy", "--", "test", "-r", str(runtime_path))
         relay_changed = previous != candidate
         if relay_changed:
             atomic(PROFILES, candidate, 0o640, relay_group)
