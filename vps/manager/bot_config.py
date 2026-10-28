@@ -19,6 +19,7 @@ PROFILE_RE = re.compile(r"^[a-z][a-z0-9-]{0,23}$")
 DEFAULT = {
     "token": "", "admin_id": 0, "channel_id": "", "auto_publish": False,
     "posted": [], "offset": 0,
+    "scheduled_inbounds": [], "schedule_sent_slots": {},
 }
 
 
@@ -42,6 +43,17 @@ def validate_config(config):
         raise ValueError("invalid published profile list")
     if type(config["offset"]) is not int or not 0 <= config["offset"] < 2**63:
         raise ValueError("invalid bot offset")
+    targets = config["scheduled_inbounds"]
+    if (not isinstance(targets, list) or len(targets) > 32 or
+            any(not isinstance(x, str) or not PROFILE_RE.fullmatch(x) for x in targets) or
+            len(set(targets)) != len(targets)):
+        raise ValueError("invalid scheduled inbounds")
+    sent = config["schedule_sent_slots"]
+    if (not isinstance(sent, dict) or len(sent) > 32 or
+            any(not isinstance(k, str) or not PROFILE_RE.fullmatch(k) or
+                type(v) is not int or v < 0 or v >= 2**63 or
+                k not in targets for k, v in sent.items())):
+        raise ValueError("invalid schedule history")
     return config
 
 
@@ -49,7 +61,11 @@ def _read():
     try:
         if CONFIG.stat().st_size > 64 * 1024:
             raise ValueError("Telegram bot settings too large")
-        return validate_config(json.loads(CONFIG.read_text(encoding="utf-8")))
+        saved = json.loads(CONFIG.read_text(encoding="utf-8"))
+        if not isinstance(saved, dict):
+            raise ValueError("invalid Telegram bot config")
+        # Old installations have no cron fields; migrate in memory on load.
+        return validate_config({**copy.deepcopy(DEFAULT), **saved})
     except FileNotFoundError:
         return copy.deepcopy(DEFAULT)
 
@@ -111,6 +127,8 @@ def configure(token, admin_id, channel_id, auto_publish, profile_ids):
         if auto_publish and not (data["token"] and uid and channel):
             raise ValueError("برای انتشار خودکار، توکن، شناسه مدیر و کانال را وارد کنید")
         data["auto_publish"] = auto_publish
+        if before_channel != channel:
+            data["schedule_sent_slots"] = {}
         if auto_publish and (not before_auto or before_channel != channel):
             data["posted"] = profile_ids[:1024]
     return update_config(change)
@@ -118,3 +136,25 @@ def configure(token, admin_id, channel_id, auto_publish, profile_ids):
 
 def ready(config):
     return bool(config["token"] and config["admin_id"] and config["channel_id"])
+
+
+def schedule_inbound(profile_id, enabled):
+    """Select an inbound for the UTC/server-clock aligned 30-minute timer."""
+    if not isinstance(profile_id, str) or not PROFILE_RE.fullmatch(profile_id):
+        raise ValueError("شناسه اینباند معتبر نیست")
+    if type(enabled) is not bool:
+        raise ValueError("invalid schedule toggle")
+
+    def change(data):
+        if enabled:
+            if not ready(data):
+                raise ValueError("ابتدا ربات و کانال مقصد را تنظیم کنید")
+            if profile_id not in data["scheduled_inbounds"]:
+                data["scheduled_inbounds"].append(profile_id)
+            data["schedule_sent_slots"].pop(profile_id, None)
+        else:
+            data["scheduled_inbounds"] = [
+                item for item in data["scheduled_inbounds"] if item != profile_id
+            ]
+            data["schedule_sent_slots"].pop(profile_id, None)
+    return update_config(change)
