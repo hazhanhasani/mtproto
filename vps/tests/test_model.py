@@ -64,6 +64,20 @@ class ModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_argv(p, "--nat-info 1.2.3.4; whoami")
 
+    def test_install_runtime_parent_permissions(self):
+        """The backend user must traverse the parent of runtime/<id>.json."""
+        base = pathlib.Path(__file__).resolve().parents[1]
+        installer = (base / "install.sh").read_text(encoding="utf-8")
+        repair = (base / "repair-backend.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            "install -d -m 0711 -o root -g bluepanel /etc/blue-mtproxy",
+            installer,
+        )
+        self.assertIn('chmod 0711 "$ROOT"', repair)
+        self.assertIn('runuser -u mtproxy -- test -r "$profile"', repair)
+        self.assertIn('chmod 0640 "$profile"', repair)
+        self.assertIn('systemctl restart "$unit"', repair)
+
     def test_profile_ids_are_safe(self):
         state = sample()
         state["profiles"][0]["id"] = "../../systemd"
