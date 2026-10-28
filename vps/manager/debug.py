@@ -114,7 +114,7 @@ def collect():
     checks = []
     profiles = []
 
-    for name in ("caddy.service", "tproxy-server.service", "blue-mtproxy-panel.service"):
+    for name in ("caddy.service", "tproxy-server.service", "blue-mtproxy-panel.service", "blue-mtproxy-control.service"):
         healthy = service_active(name)
         checks.append(check("service_" + name.split(".")[0].replace("-", "_"),
                             "ok" if healthy else "fail",
