@@ -1,5 +1,64 @@
 # Blue Proxy Manager — VPS Installation
 
+## Telegram channel publishing bot (UI 0.5.0)
+
+The admin panel now has a dedicated **/bot** page. The unprivileged
+`blue-mtproxy-telegram-bot.service` performs outbound HTTPS Telegram Bot API
+long polling. No webhook, extra public port, firewall rule or Cloudflare
+change is required.
+
+**Connect the bot**
+
+1. Create a **new dedicated bot** via [@BotFather](https://t.me/BotFather).
+2. Add it as **Administrator** to your destination Telegram channel and
+   enable **Post Messages**. Channel usernames (`@YourChannel`) and
+   private channel IDs (`-100...`) are supported.
+3. Sign in to `https://<panel-hostname>/bot`, enter the BotFather token,
+   your numeric Telegram **user ID** (not the bot's ID), and the channel.
+   Leave the token input blank on future edits to retain it.
+4. Save settings, then message the bot privately with `/start`.
+   Only the configured Telegram user ID is permitted to issue commands;
+   bot commands in groups are ignored.
+5. Run `/new Your Proxy Name` to create an inbound from Telegram, then
+   tap **Publish**, or run `/list` and select an existing inbound. The
+   **Publish to channel** button also appears in panel inbound details.
+   The bot additionally supports `/publish main` and `/channel`.
+
+Enable **Auto Publish** on the `/bot` page to automatically publish future
+new inbounds. Existing inbounds are marked as already known when enabling
+auto publish or changing destination, avoiding an unintentional flood.
+Manual re-posting is always possible. If Telegram denies posting, check
+that the bot remains a channel administrator with Post Messages permission.
+There is no automatic creation of Telegram channels or bots.
+
+**Cloudflare CDN-only compatibility:** Only the WEB HTTPS:443 transport is
+public. The bot publishes `t.me/webproxy` with a clearly marked WEB
+experimental button in this mode. This link is **not** a standard MTProto
+`t.me/proxy` connection: ordinary Telegram clients do not currently
+support the WEB protocol, and the public t.me WEB route may not open in
+an unmodified client. A regular **Connect** button can be provided only
+when a **direct TCP MTProto listener is externally reachable**, which
+is deliberately disabled in CDN-only mode. Do not claim that the
+standard MTProto link works through Cloudflare's normal HTTP CDN.
+
+**Installation / upgrade:** Once the code is merged to main, the
+existing GitHub updater will run `vps/install-bot.sh` automatically.
+For a manual check after updating:
+
+```bash
+sudo systemctl status blue-mtproxy-telegram-bot.service --no-pager
+sudo journalctl -u blue-mtproxy-telegram-bot.service -n 30 --no-pager
+```
+
+Bot settings, update cursor and auto-publication history are stored in
+`/var/lib/blue-mtproxy/telegram-bot.json` as `0600` owned by the
+unprivileged panel user, outside the Git checkout. The token is not
+exposed on the admin page, sent to the bot chat, or included in debug
+reports. Rotate a leaked bot token in BotFather before reconfiguring it.
+
+---
+
+
 ## Visible Add User controls (UI 0.4.0)
 
 The dashboard and the inbound list provide a **+ افزودن کاربر** shortcut.

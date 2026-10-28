@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Blue Proxy | {{ {'overview':'داشبورد','inbounds':'اینباندها','detail':selected.label if selected else 'اینباند','users':'کاربران','settings':'تنظیمات'}[section] }}</title>
+<title>Blue Proxy | {{ {'overview':'داشبورد','inbounds':'اینباندها','detail':selected.label if selected else 'اینباند','users':'کاربران','settings':'تنظیمات','bot':'ربات کانال'}[section] }}</title>
 <link rel="stylesheet" href="{{url_for('static',filename='manager.css')}}">
 </head><body>
 <div class="workspace">
@@ -13,6 +13,7 @@
       <a href="{{url_for('index')}}" class="{{'selected' if section=='overview' else ''}}"><span class="nav-ic">◫</span> داشبورد</a>
       <a href="{{url_for('inbounds')}}" class="{{'selected' if section in ('inbounds','detail') else ''}}"><span class="nav-ic">◇</span> اینباندها <span class="count">{{state.profiles|length}}</span></a>
       <a href="{{url_for('users')}}" class="{{'selected' if section=='users' else ''}}"><span class="nav-ic">♙</span> کاربران <span class="count">{{total_users}}</span></a>
+      <a href="{{url_for('bot_page')}}" class="{{'selected' if section=='bot' else ''}}"><span class="nav-ic">✈</span> ربات کانال</a>
     </nav>
     <div class="nav-category">سیستم</div>
     <nav class="side-nav">
@@ -26,7 +27,7 @@
   </aside>
   <main class="main">
     <header class="topbar">
-      <div class="breadcrumb">بلو پروکسی <span> / </span> {{'نمای کلی' if section=='overview' else 'اینباندها' if section in ('inbounds','detail') else 'کاربران' if section=='users' else 'تنظیمات'}} {% if selected %}<span>/</span> {{selected.label}}{% endif %}</div>
+      <div class="breadcrumb">بلو پروکسی <span> / </span> {{'نمای کلی' if section=='overview' else 'اینباندها' if section in ('inbounds','detail') else 'کاربران' if section=='users' else 'ربات کانال' if section=='bot' else 'تنظیمات'}} {% if selected %}<span>/</span> {{selected.label}}{% endif %}</div>
       <div class="top-actions"><span class="top-live"><i></i> {{'CDN ONLY' if cdn_only else 'VPS'}}</span>
       <form action="{{url_for('logout')}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn subtle" type="submit">خروج</button></form></div>
     </header>
@@ -93,6 +94,13 @@
       </section>
       <div class="panel">
       <div class="panel-title"><h2>کاربران اینباند</h2><span class="hint">فعال‌سازی، قطع دسترسی و لینک اختصاصی</span></div>
+      {% if bot.ready and p.enabled %}
+      <form action="{{url_for('publish_to_channel',profile_id=p.id)}}" method="post" class="field-row">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <button class="btn primary" type="submit">✈ انتشار اینباند در کانال</button>
+        <span class="hint">مقصد: {{bot.channel_id}} · ارسال دستی</span>
+      </form>
+      {% endif %}
       {% if not p.get('clients',[]) %}<div class="empty">هنوز کاربری برای این اینباند تعریف نشده است. از فرم زیر اولین کاربر را بساز.</div>{% endif %}
       {% for c in p.get('clients',[]) %}
       <details class="user-item" id="user-{{c.id}}">
@@ -163,6 +171,46 @@
       <div class="table-wrap"><table id="users-table" class="listing"><thead><tr><th>کاربر</th><th>اینباند</th><th>دسترسی</th><th>مصرف کاربر</th><th>اتصال کاربر</th><th></th></tr></thead><tbody>
       {% for p,c in users %}<tr><td><strong>{{c.label}}</strong><div class="secondary-text">#{{c.id}}</div></td><td>{{p.label}}</td><td><span class="status {{'up' if c.enabled else 'down'}}">{{'مجاز' if c.enabled else 'قطع'}}</span></td><td class="muted">—</td><td class="muted">—</td><td><div class="row-actions"><a href="{{url_for('inbound_detail',profile_id=p.id)}}#user-{{c.id}}" class="table-link">مدیریت ←</a><form method="post" action="{{url_for('toggle_user',profile_id=p.id,client_id=c.id)}}"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="mini-action {{'warn-action' if c.enabled else 'start-action'}}" type="submit">{{'غیرفعال کردن' if c.enabled else 'فعال کردن'}}</button></form></div></td></tr>{% endfor %}
       </tbody></table></div><p class="panel-note">برای مصرف و آنلاین‌بودن دقیق هر کاربر به حسابداری مستقل Secret در موتور انتقال نیاز است؛ به‌جای نمایش صفر ساختگی، «—» نشان داده می‌شود.</p></div>
+
+
+      {% elif section=='bot' %}
+      <div class="page-heading"><div><div class="eyebrow">TELEGRAM CHANNEL BOT</div><h1>ربات انتشار پروکسی</h1><p>ساخت اینباند از تلگرام، انتشار دستی و ارسال خودکار اینباندهای جدید به کانال.</p></div><span class="status {{'up' if bot.ready else 'unknown'}}">{{'پیکربندی‌شده' if bot.ready else 'نیازمند تنظیم'}}</span></div>
+      <section class="two-col">
+        <div class="panel form-panel">
+          <div class="panel-title"><h2>اتصال ربات و کانال</h2><span class="hint">توکن ذخیره می‌شود اما هرگز در پنل نمایش داده نمی‌شود</span></div>
+          <form method="post" action="{{url_for('save_bot_config')}}">
+            <input type="hidden" name="_csrf" value="{{csrf}}">
+            <div class="field"><label for="bot-token">Bot Token از BotFather {{'✓ ثبت شده' if bot.token_set else '· تنظیم نشده'}}</label>
+              <input id="bot-token" name="token" type="password" maxlength="160" autocomplete="new-password" placeholder="{{'خالی بگذارید تا توکن فعلی حفظ شود' if bot.token_set else '123456789:AA...'}}" dir="ltr"></div>
+            <div class="field"><label for="bot-admin">Telegram Admin User ID</label>
+              <input id="bot-admin" name="admin_id" type="text" inputmode="numeric" required pattern="[0-9]+" value="{{bot.admin_id if bot.admin_id else ''}}" placeholder="مثلاً 123456789" dir="ltr"></div>
+            <div class="field"><label for="bot-channel">شناسه کانال مقصد</label>
+              <input id="bot-channel" name="channel_id" type="text" required value="{{bot.channel_id}}" placeholder="@YourChannel یا -1001234567890" dir="ltr"></div>
+            <label class="checkline"><input name="auto_publish" type="checkbox" {{'checked' if bot.auto_publish else ''}}> انتشار خودکار اینباندهای جدید</label>
+            <p class="panel-note">با فعال‌سازی، اینباندهای قبلی ناخواسته منتشر نمی‌شوند؛ فقط اینباندهای تازه منتشر خواهند شد.</p>
+            <button type="submit" class="btn primary">ذخیره تنظیمات ربات</button>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-title"><h2>راهنمای راه‌اندازی</h2></div>
+          <div class="health-line"><span>۱. ساخت ربات در <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a></span><span class="status {{'up' if bot.token_set else 'unknown'}}">{{'انجام شده' if bot.token_set else 'لازم'}}</span></div>
+          <div class="health-line"><span>۲. ثبت شناسه عددی اکانت مدیر</span><span class="status {{'up' if bot.admin_id else 'unknown'}}">{{'انجام شده' if bot.admin_id else 'لازم'}}</span></div>
+          <div class="health-line"><span>۳. افزودن ربات به ادمین‌های کانال با مجوز Post Messages</span><span class="status unknown">در تلگرام بررسی شود</span></div>
+          <div class="health-line"><span>۴. ارسال /start به ربات در چت خصوصی</span><span class="status unknown">آزمایش دستی</span></div>
+          <p class="panel-note">دستورات: <code>/new Proxy Name</code>، <code>/list</code>، <code>/publish main</code> و <code>/channel</code>. دستورهای مدیریتی فقط برای شناسه مدیر مجاز هستند.</p>
+          <div class="info-banner">⚠ در حالت Cloudflare CDN-only، لینک WEB آزمایشی برای کلاینت سازگار منتشر می‌شود؛ دکمه Connect استاندارد MTProto در تلگرام معمولی به مسیر مستقیم TCP نیاز دارد.</div>
+        </div>
+      </section>
+      <div class="panel"><div class="panel-title"><h2>انتشار دستی اینباندها</h2><span class="hint">ارسال پست با دکمه اتصال به کانال تنظیم‌شده</span></div>
+        {% if not bot.ready %}<div class="empty">برای فعال‌کردن انتشار، توکن ربات، شناسه مدیر و کانال را تنظیم کن.</div>{% endif %}
+        {% for p in state.profiles %}
+        <div class="health-line"><span><strong>{{p.label}}</strong> <small>#{{p.id}}</small></span>
+          <form method="post" action="{{url_for('publish_to_channel',profile_id=p.id)}}"><input type="hidden" name="_csrf" value="{{csrf}}">
+            <button type="submit" class="btn compact" {{'disabled' if not bot.ready or not p.enabled else ''}}>انتشار در کانال</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
 
       {% elif section=='settings' %}
       <div class="page-heading"><div><div class="eyebrow">SYSTEM SETTINGS</div><h1>تنظیمات سرور</h1><p>دامنه‌ها، حالت CDN و به‌روزرسانی خودکار از GitHub.</p></div></div>
