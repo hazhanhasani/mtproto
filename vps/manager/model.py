@@ -11,6 +11,7 @@ CARRIERS = {"https", "https-lanes", "websocket", "websocket-lanes"}
 # The upstream WEB relay has a hard default limit of 32 active profiles.
 MAX_WEB_SECRETS = 32
 MAX_CLIENTS_PER_INBOUND = 31
+MAX_STORED_CLIENTS = 128  # keep serialized state under reconciler 64 KiB cap
 
 
 def new_secret():
@@ -34,6 +35,7 @@ def validate(state):
     seen_ids, seen_secrets, seen_slots = set(), set(), set()
     enabled = 0
     active_secrets = 0
+    stored_clients = 0
     for p in profiles:
         if not isinstance(p, dict) or not IDENT.fullmatch(str(p.get("id", ""))):
             raise ValueError("invalid profile id")
@@ -63,6 +65,7 @@ def validate(state):
         clients = p.get("clients", [])
         if not isinstance(clients, list) or len(clients) > MAX_CLIENTS_PER_INBOUND:
             raise ValueError("invalid inbound client count")
+        stored_clients += len(clients)
         local_ids = set()
         for c in clients:
             if not isinstance(c, dict) or not IDENT.fullmatch(str(c.get("id", ""))):
@@ -88,7 +91,9 @@ def validate(state):
     if not enabled:
         raise ValueError("at least one profile must be enabled")
     if active_secrets > MAX_WEB_SECRETS:
-        raise ValueError("WEB relay supports at most 32 active inbound + client secrets")
+        raise ValueError("ظرفیت WEB Relay حداکثر ۳۲ Secret فعال شامل اینباندها و کاربران است")
+    if stored_clients > MAX_STORED_CLIENTS:
+        raise ValueError("حداکثر ۱۲۸ کاربر ذخیره‌شده مجاز است")
     return state
 
 
