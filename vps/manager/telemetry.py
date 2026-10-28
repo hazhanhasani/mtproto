@@ -42,3 +42,49 @@ def inbound_connections(slot, timeout=1.5):
         return sample.get("total_special_connections")
     except (OSError, URLError, HTTPError, ValueError):
         return None
+
+
+def relay_traffic(timeout=2):
+    """Return exact process-lifetime WEB relay byte counters, or None.
+
+    The upstream server's loopback Prometheus endpoint exposes only GLOBAL
+    tproxy_bytes_up_total/down_total, not inbound/user-specific counters.
+    """
+    try:
+        with urlopen("http://127.0.0.1:8081/metrics", timeout=timeout) as response:
+            if response.status != 200:
+                return None
+            raw = response.read(MAX_STATS_BYTES + 1)
+        if len(raw) > MAX_STATS_BYTES:
+            return None
+        values = {}
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            fields = line.strip().split()
+            if len(fields) != 2 or fields[0] not in (
+                "tproxy_bytes_up_total", "tproxy_bytes_down_total"
+            ):
+                continue
+            if fields[1].isascii() and fields[1].isdecimal():
+                value = int(fields[1])
+                if value <= 1_000_000_000_000_000:
+                    values[fields[0]] = value
+        if set(values) != {"tproxy_bytes_up_total", "tproxy_bytes_down_total"}:
+            return None
+        return {
+            "up": values["tproxy_bytes_up_total"],
+            "down": values["tproxy_bytes_down_total"],
+            "total": sum(values.values()),
+            "scope": "all_inbounds_since_relay_restart",
+        }
+    except (OSError, URLError, HTTPError, UnicodeError, ValueError):
+        return None
+
+
+def format_bytes(value):
+    if type(value) is not int or value < 0:
+        return "—"
+    amount = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if amount < 1024 or unit == "TiB":
+            return f"{amount:.0f} {unit}" if unit == "B" else f"{amount:.2f} {unit}"
+        amount /= 1024
