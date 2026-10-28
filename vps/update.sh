@@ -33,10 +33,11 @@ rollback() {
   "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt" || true
   bash "$repo/vps/panel-permissions.sh" || true
   systemctl restart blue-mtproxy-panel.service || true
+  systemctl restart blue-mtproxy-telegram-bot.service || true
 }
 trap rollback ERR
 git -C "$repo" reset --hard "$target"
-bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh" "$repo/vps/install-control.sh" "$repo/vps/cdn-only.sh"
+bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh" "$repo/vps/install-control.sh" "$repo/vps/install-bot.sh" "$repo/vps/cdn-only.sh"
 "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt"
 bash "$repo/vps/panel-permissions.sh"
 BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
@@ -45,6 +46,7 @@ BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
 # update; restart it before the panel starts sending new operations.
 BLUE_CONTROL_NO_RESTART=1 bash "$repo/vps/install-control.sh"
 systemctl restart blue-mtproxy-panel.service
+bash "$repo/vps/install-bot.sh"
 for i in 1 2 3 4 5 6 7 8 9 10; do
   if curl --silent --fail --max-time 2 http://127.0.0.1:8750/healthz | grep -q '"ok":true'; then
     trap - ERR
