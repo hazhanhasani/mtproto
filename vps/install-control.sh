@@ -33,7 +33,9 @@ ProtectHome=yes
 ProtectSystem=strict
 ReadWritePaths=/run/blue-mtproxy-control /run/lock /etc/blue-mtproxy /etc/tproxy-server /var/lib/blue-mtproxy
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+# The reconciler verifies file readability as tproxy/mtproxy via runuser.
+# CAP_SETUID and CAP_SETGID are needed for *dropping* from root to those IDs.
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID
 UMask=0077
 [Install]
 WantedBy=multi-user.target
