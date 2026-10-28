@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="fa" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Blue Proxy | {{ {'overview':'داشبورد','inbounds':'اینباندها','detail':selected.label if selected else 'اینباند','users':'کاربران','settings':'تنظیمات'}[section] }}</title>
+<link rel="stylesheet" href="{{url_for('static',filename='manager.css')}}">
+</head><body>
+<div class="workspace">
+  <aside class="sidebar" aria-label="ناوبری اصلی">
+    <a class="brand" href="{{url_for('index')}}"><span class="brand-icon">B</span><span><strong>Blue Proxy</strong><small>NETWORK CONTROL</small></span></a>
+    <div class="nav-category">مدیریت</div>
+    <nav class="side-nav">
+      <a href="{{url_for('index')}}" class="{{'selected' if section=='overview' else ''}}"><span class="nav-ic">◫</span> داشبورد</a>
+      <a href="{{url_for('inbounds')}}" class="{{'selected' if section in ('inbounds','detail') else ''}}"><span class="nav-ic">◇</span> اینباندها <span class="count">{{state.profiles|length}}</span></a>
+      <a href="{{url_for('users')}}" class="{{'selected' if section=='users' else ''}}"><span class="nav-ic">♙</span> کاربران <span class="count">{{total_users}}</span></a>
+    </nav>
+    <div class="nav-category">سیستم</div>
+    <nav class="side-nav">
+      <a href="{{url_for('debug_dashboard')}}"><span class="nav-ic">◉</span> سلامت و Debug</a>
+      <a href="{{url_for('settings_page')}}" class="{{'selected' if section=='settings' else ''}}"><span class="nav-ic">⚙</span> تنظیمات</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="edge-state"><span class="pulse"></span><div><strong>Cloudflare WEB</strong><small>{{'CDN-only فعال' if cdn_only else 'اتصال عمومی مستقیم/WEB'}}</small></div></div>
+      <span class="server-host">{{state.hostname}}</span>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumb">بلو پروکسی <span> / </span> {{'نمای کلی' if section=='overview' else 'اینباندها' if section in ('inbounds','detail') else 'کاربران' if section=='users' else 'تنظیمات'}} {% if selected %}<span>/</span> {{selected.label}}{% endif %}</div>
+      <div class="top-actions"><span class="top-live"><i></i> {{'CDN ONLY' if cdn_only else 'VPS'}}</span>
+      <form action="{{url_for('logout')}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn subtle" type="submit">خروج</button></form></div>
+    </header>
+    <div class="page">
+      {% for category,message in get_flashed_messages(with_categories=true) %}
+      <div role="alert" class="alert {{'bad' if category=='error' else 'good'}}">{{message}}</div>
+      {% endfor %}
+      {% if section=='overview' %}
+      <div class="page-heading"><div><div class="eyebrow">OVERVIEW</div><h1>داشبورد مدیریت</h1><p>نمایی از اینباندها، کاربران و سلامت شبکه در یک صفحه.</p></div><a class="btn primary" href="{{url_for('inbounds')}}">مدیریت اینباندها <span>←</span></a></div>
+      <section class="metrics">
+        <div class="metric"><div class="metric-head">اینباندها <span>◇</span></div><div class="metric-value">{{state.profiles|length}}</div><div class="metric-note">{{state.profiles|selectattr('enabled')|list|length}} فعال</div></div>
+        <div class="metric"><div class="metric-head">کاربران مدیریت‌شده <span>♙</span></div><div class="metric-value">{{total_users}}</div><div class="metric-note">{{users|selectattr('1.enabled')|list|length if false else 'Secret اختصاصی و قابل قطع'}}</div></div>
+        <div class="metric"><div class="metric-head">اتصالات فعلی اینباندها <span>⤴</span></div><div class="metric-value">{{total_connections if total_connections is not none else '—'}}</div><div class="metric-note">{{'مجموع شمارنده‌های زنده MTProxy' if total_connections is not none else 'داده زنده در دسترس نیست'}}</div></div>
+        <div class="metric"><div class="metric-head">مصرف کل <span>▥</span></div><div class="metric-value muted">—</div><div class="metric-note">نیازمند محاسبه‌گر ترافیک مستقل</div></div>
+      </section>
+      <section class="two-col">
+        <div class="panel">
+          <div class="panel-title"><h2>اینباندهای شما</h2><a href="{{url_for('inbounds')}}">نمایش همه</a></div>
+          <div class="table-wrap"><table class="listing"><thead><tr><th>اینباند</th><th>وضعیت</th><th>کاربران</th><th>اتصال</th><th></th></tr></thead><tbody>
+          {% for p in state.profiles %}
+            {% set metric=telemetry.get(p.id,{}) %}
+            <tr><td><div class="row-name">{{p.label}}</div><div class="secondary-text">WEB · #{{p.id}}</div></td>
+            <td><span class="status {{'up' if services[p.id]=='ok' else 'down' if services[p.id]=='fail' else 'unknown'}}">{{'سالم' if services[p.id]=='ok' else 'خطا' if services[p.id]=='fail' else 'نامشخص'}}</span></td>
+            <td>{{p.get('clients',[])|length}}</td><td>{{metric.get('active_connections') if metric.get('active_connections') is not none else '—'}}</td>
+            <td><a class="table-link" href="{{url_for('inbound_detail',profile_id=p.id)}}">مدیریت ←</a></td></tr>
+          {% endfor %}
+          </tbody></table></div>
+        </div>
+        <div class="panel health-panel">
+          <div class="panel-title"><h2>سلامت سرویس‌ها</h2><a href="{{url_for('debug_dashboard')}}">گزارش کامل /debug</a></div>
+          {% for item in report.get('checks',[])[:7] %}
+          <div class="health-line"><span>{{item.code}}</span><span class="status {{'up' if item.status=='ok' else 'down' if item.status=='fail' else 'unknown'}}">{{item.status}}</span></div>
+          {% endfor %}
+          <p class="panel-note">این گزارش هر ۹۰ ثانیه به‌روز می‌شود؛ آمار اتصال به معنای تأیید اتصال یک کاربر مشخص نیست.</p>
+        </div>
+      </section>
+
+      {% elif section=='inbounds' %}
+      <div class="page-heading"><div><div class="eyebrow">INBOUND MANAGEMENT</div><h1>اینباندها</h1><p>هر اینباند یک سرویس MTProxy مستقل با Secret، اسپانسر و کاربران مخصوص خودش است.</p></div></div>
+      <div class="panel">
+      <div class="panel-title"><h2>لیست اینباندها</h2><span class="hint">{{state.profiles|length}} از حداکثر ۳۲ اینباند</span></div>
+      <div class="table-wrap"><table class="listing"><thead><tr><th>عنوان / شناسه</th><th>پورت داخلی</th><th>حالت</th><th>کاربران</th><th>اتصال</th><th>مدیریت</th></tr></thead><tbody>
+      {% for p in state.profiles %}{% set metric=telemetry.get(p.id,{}) %}
+      <tr><td><div class="row-name">{{p.label}}</div><div class="secondary-text">#{{p.id}}</div></td>
+      <td><span class="mono">{{10443+p.slot}}</span></td>
+      <td><span class="status {{'up' if services[p.id]=='ok' else 'down' if services[p.id]=='fail' else 'unknown'}}">{{'فعال' if services[p.id]=='ok' else 'خطا' if services[p.id]=='fail' else 'نامشخص'}}</span></td>
+      <td>{{p.get('clients',[])|length}}</td><td>{{metric.get('active_connections') if metric.get('active_connections') is not none else '—'}}</td>
+      <td><a class="btn compact" href="{{url_for('inbound_detail',profile_id=p.id)}}">جزئیات و کاربران ←</a></td></tr>
+      {% endfor %}</tbody></table></div></div>
+      <div class="panel form-panel"><div class="panel-title"><h2>ایجاد اینباند جدید</h2><span class="hint">هر اینباند یک پورت لوکال، Secret و Ad Tag مستقل دارد</span></div>
+      <form action="{{url_for('add_profile')}}" method="post" class="field-row">
+      <input type="hidden" name="_csrf" value="{{csrf}}">
+      <div class="field grow"><label>عنوان اینباند</label><input required maxlength="80" name="label" placeholder="مثلاً پروکسی اسپانسر شماره ۲"></div>
+      <button type="submit" class="btn primary">+ ساخت اینباند</button>
+      </form></div>
+
+      {% elif section=='detail' and selected %}
+      {% set p=selected %}{% set metric=telemetry.get(p.id,{}) %}
+      <div class="page-heading"><div><div class="eyebrow">INBOUND / {{p.id}}</div><h1>{{p.label}}</h1><p>پورت داخلی <span class="mono">{{10443+p.slot}}</span> · {{p.carrier}} · یک Ad Tag برای اینباند</p></div><a class="btn" href="{{url_for('inbounds')}}">← بازگشت به اینباندها</a></div>
+      <section class="metrics three">
+        <div class="metric"><div class="metric-head">وضعیت سرویس <span>◉</span></div><div class="metric-value state-value">{{'فعال' if services[p.id]=='ok' else 'خطا' if services[p.id]=='fail' else 'نامشخص'}}</div><div class="metric-note">MTProxy / WEB Relay</div></div>
+        <div class="metric"><div class="metric-head">اتصالات زنده اینباند <span>⤴</span></div><div class="metric-value">{{metric.get('active_connections') if metric.get('active_connections') is not none else '—'}}</div><div class="metric-note">آمار تجمیعی از پورت stats</div></div>
+        <div class="metric"><div class="metric-head">کاربران تعریف‌شده <span>♙</span></div><div class="metric-value">{{p.get('clients',[])|length}}</div><div class="metric-note">Secret مستقل برای هر نفر</div></div>
+      </section>
+      <div class="panel">
+      <div class="panel-title"><h2>کاربران اینباند</h2><span class="hint">فعال‌سازی، قطع دسترسی و لینک اختصاصی</span></div>
+      {% if not p.get('clients',[]) %}<div class="empty">هنوز کاربری برای این اینباند تعریف نشده است. از فرم زیر اولین کاربر را بساز.</div>{% endif %}
+      {% for c in p.get('clients',[]) %}
+      <details class="user-item">
+        <summary><span class="user-avatar">{{c.label[:1]}}</span><span class="grow"><strong>{{c.label}}</strong><small>#{{c.id}}</small></span><span class="status {{'up' if c.enabled else 'down'}}">{{'مجاز' if c.enabled else 'غیرفعال'}}</span><span class="expand-arrow">⌄</span></summary>
+        <div class="user-body">
+          <div class="info-banner">این کاربر Secret مستقل دارد. آنلاین‌بودن، مصرف و محدودیت حجم به‌صورت تفکیکی در هسته فعلی قابل اندازه‌گیری یا اعمال نیست؛ شمارندهٔ بالای صفحه متعلق به کل اینباند است.</div>
+          <div class="link-box"><label>لینک WEB کاربر (کلاینت WEB سازگار)</label><code>{{client_web_url(state.hostname,c.secret)}}</code></div>
+          {% if not cdn_only %}<div class="link-box"><label>لینک MTProto مستقیم</label><code>{{client_direct_url(state.hostname,c.secret,10443+p.slot)}}</code></div>{% endif %}
+          <form action="{{url_for('edit_user',profile_id=p.id,client_id=c.id)}}" method="post" class="field-row">
+            <input type="hidden" name="_csrf" value="{{csrf}}">
+            <div class="field grow"><label>نام کاربر</label><input name="label" maxlength="80" required value="{{c.label}}"></div>
+            <label class="checkline"><input type="checkbox" name="enabled" {{'checked' if c.enabled else ''}}> فعال</label>
+            <button class="btn primary" type="submit">ذخیره کاربر</button>
+          </form>
+          <div class="danger-row">
+            <form action="{{url_for('rotate_user',profile_id=p.id,client_id=c.id)}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn" type="submit">تولید Secret جدید</button></form>
+            <form action="{{url_for('delete_user',profile_id=p.id,client_id=c.id)}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn danger" type="submit">حذف و لغو دسترسی</button></form>
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+      <form action="{{url_for('create_user',profile_id=p.id)}}" method="post" class="field-row add-user">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <div class="field grow"><label>افزودن کاربر به اینباند</label><input maxlength="80" required name="label" placeholder="مثلاً کاربر جدید"></div>
+        <button class="btn primary" type="submit">+ ایجاد کاربر</button>
+      </form>
+      <p class="panel-note">محدودیت پروتکل: مجموع اینباندهای فعال و کاربران فعالِ دارای Secret مستقل، حداکثر ۳۲ مورد است (سقف WEB Relay مرجع).</p>
+      </div>
+      <div class="panel">
+        <div class="panel-title"><h2>تنظیمات اینباند</h2><span class="hint">با ذخیره، تغییرات کاربران و اینباند به سرویس مربوط اعمال می‌شود.</span></div>
+        <form method="post" action="{{url_for('update_profile',profile_id=p.id)}}" class="settings-grid">
+          <input type="hidden" name="_csrf" value="{{csrf}}">
+          <div class="field"><label>عنوان اینباند</label><input required maxlength="80" name="label" value="{{p.label}}"></div>
+          <div class="field"><label>حالت انتقال WEB</label><select name="carrier">{% for m in carriers %}<option value="{{m}}" {{'selected' if p.carrier==m else ''}}>{{m}}</option>{% endfor %}</select></div>
+          <div class="field"><label>کانال اسپانسر</label><input name="channel" placeholder="@channel" value="{{p.channel}}"></div>
+          <div class="field"><label>Ad Tag دریافتی از MTProxyBot</label><input name="ad_tag" maxlength="32" pattern="[0-9a-fA-F]{32}" placeholder="32 hex" value="{{p.ad_tag}}"></div>
+          <div class="field wide"><label>Secret اصلی اینباند (لینک قدیمی؛ تغییر آن لینک‌های قبلی را غیرفعال می‌کند)</label><input required maxlength="32" minlength="32" pattern="[0-9a-fA-F]{32}" name="secret" value="{{p.secret}}" autocomplete="off"></div>
+          <label class="checkline"><input type="checkbox" name="enabled" {{'checked' if p.enabled else ''}}> اینباند فعال باشد</label>
+          <button class="btn primary" type="submit">ذخیره تنظیمات</button>
+        </form>
+        <div class="danger-row">
+          <form action="{{url_for('rotate_profile',profile_id=p.id)}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn" type="submit">چرخش Secret اصلی</button></form>
+          <form action="{{url_for('delete_profile',profile_id=p.id)}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn danger" type="submit">حذف اینباند و کاربرانش</button></form>
+        </div>
+        {% if cdn_only %}<div class="info-banner">حالت CDN-only فعال است؛ پورت MTProxy به اینترنت باز نیست. اتصال از طریق WEB و Cloudflare پورت ۴۴۳ مستلزم کلاینت سازگار است.</div>{% endif %}
+      </div>
+
+      {% elif section=='users' %}
+      <div class="page-heading"><div><div class="eyebrow">ACCESS MANAGEMENT</div><h1>کاربران</h1><p>فهرست کاربران همهٔ اینباندها با Secret مستقل و وضعیت دسترسی.</p></div></div>
+      <div class="panel">
+      {% if not users %}<div class="empty">کاربری تعریف نشده. برای افزودن کاربر، وارد جزئیات یک اینباند شو.</div>{% endif %}
+      <div class="table-wrap"><table class="listing"><thead><tr><th>کاربر</th><th>اینباند</th><th>دسترسی</th><th>مصرف کاربر</th><th>اتصال کاربر</th><th></th></tr></thead><tbody>
+      {% for p,c in users %}<tr><td><strong>{{c.label}}</strong><div class="secondary-text">#{{c.id}}</div></td><td>{{p.label}}</td><td><span class="status {{'up' if c.enabled else 'down'}}">{{'مجاز' if c.enabled else 'قطع'}}</span></td><td class="muted">—</td><td class="muted">—</td><td><a href="{{url_for('inbound_detail',profile_id=p.id)}}" class="table-link">مدیریت ←</a></td></tr>{% endfor %}
+      </tbody></table></div><p class="panel-note">برای مصرف و آنلاین‌بودن دقیق هر کاربر به حسابداری مستقل Secret در موتور انتقال نیاز است؛ به‌جای نمایش صفر ساختگی، «—» نشان داده می‌شود.</p></div>
+
+      {% elif section=='settings' %}
+      <div class="page-heading"><div><div class="eyebrow">SYSTEM SETTINGS</div><h1>تنظیمات سرور</h1><p>دامنه‌ها، حالت CDN و به‌روزرسانی خودکار از GitHub.</p></div></div>
+      <section class="two-col">
+      <div class="panel"><div class="panel-title"><h2>اتصال و امنیت</h2></div><div class="setting-line"><span>دامنه عمومی</span><strong class="mono">{{state.hostname}}</strong></div><div class="setting-line"><span>دامنه پنل</span><strong class="mono">{{state.panel_hostname}}</strong></div><div class="setting-line"><span>حالت Cloudflare</span><span class="status {{'up' if cdn_only else 'unknown'}}">{{'CDN-only فعال' if cdn_only else 'غیرفعال'}}</span></div><p class="panel-note">MTProxy داخلی از پورت‌های ۱۰۴۴۳ به بالا استفاده می‌کند؛ در حالت CDN-only این پورت‌ها از اینترنت بسته هستند.</p></div>
+      <div class="panel"><div class="panel-title"><h2>آپدیت خودکار GitHub</h2></div><p class="secondary-text">hazhanhasani/mtproto · main · systemd timer</p>
+      <form method="post" action="{{url_for('auto_update')}}" class="field-row"><input type="hidden" name="_csrf" value="{{csrf}}"><label class="checkline"><input name="enabled" type="checkbox" {{'checked' if state.auto_update else ''}}> فعال</label><button type="submit" class="btn primary">ذخیره</button></form>
+      <form method="post" action="{{url_for('check_update')}}"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn wide-button" type="submit">بررسی نسخه جدید</button></form>
+      </div></section>
+      {% endif %}
+      <footer class="footer"><span>Blue Proxy Manager · VPS Edition</span><span>WEB experimental · Client limits not enforced · Telegram MTProxy</span></footer>
+    </div>
+  </main>
+</div></body></html>
