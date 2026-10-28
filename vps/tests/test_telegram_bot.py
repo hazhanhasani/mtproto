@@ -69,10 +69,28 @@ class TelegramBotTests(unittest.TestCase):
         self.assertIn("port=10443", direct["reply_markup"]["inline_keyboard"][0][0]["url"])
         self.assertEqual(web["reply_markup"]["inline_keyboard"][0][0]["url"],
                          "https://t.me/webproxy?server=proxy.example.com&secret=" + "a"*32)
-        self.assertIn("کلاینت سازگار", web["text"])
-        self.assertIn("Port: <code>443</code>", web["text"])
+        self.assertIn("مخصوص کلاینت سازگار", web["text"])
+        self.assertIn("<b>Port:</b> <code>443</code>", web["text"])
         self.assertIn("Main &amp; Fast", web["text"])
-        self.assertNotIn("Port: <code>10443</code>", web["text"])
+        self.assertNotIn("<b>Port:</b> <code>10443</code>", web["text"])
+        self.assertEqual(
+            web["reply_markup"]["inline_keyboard"][0][0]["text"],
+            "🔗 اتصال WEB",
+        )
+        self.assertEqual(
+            direct["reply_markup"]["inline_keyboard"][0][0]["text"],
+            "🔗 اتصال به پروکسی",
+        )
+        self.assertNotIn("کلاینت سازگار", direct["text"])
+        self.assertNotIn("⚠️", web["text"])
+        self.assertLess(len(web["text"]), 350)
+
+    def test_html_entities_are_escaped_in_channel_post(self):
+        profile = {**PROFILE, "label": "<script> & Fast"}
+        payload = bot.post_payload(STATE, profile, True)
+        self.assertIn("&lt;script&gt; &amp; Fast", payload["text"])
+        self.assertNotIn("<script>", payload["text"])
+        self.assertEqual(payload["parse_mode"], "HTML")
 
     def test_unauthorized_private_or_group_commands_do_nothing(self):
         config = self.configured()

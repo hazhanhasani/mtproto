@@ -50,31 +50,35 @@ def telegram_api(token, method, data, timeout=25):
 
 
 def post_payload(state, profile, cdn_only):
-    """Use the correct link type; never market WEB as native MTProto."""
+    """Render a compact branded post with the correct transport link."""
     host = state["hostname"]
     secret = profile["secret"]
     if cdn_only:
         port = 443
         url = web_url(host, secret)
-        transport = "WEB / Cloudflare"
-        label = "Connect WEB (Compatible Client)"
-        disclaimer = "\n⚠️ نیازمند کلاینت سازگار با WEB Proxy؛ تلگرام عادی پشتیبانی نمی‌کند."
+        transport = "WEB · Cloudflare"
+        button = "🔗 اتصال WEB"
+        compatibility = " · مخصوص کلاینت سازگار"
     else:
         port = 10443 + profile["slot"]
         url = direct_url(host, secret, port)
         transport = "MTProto"
-        label = "🔗 Connect"
-        disclaimer = ""
+        button = "🔗 اتصال به پروکسی"
+        compatibility = ""
+
     message = (
-        "🛡 <b>Blue Proxy | " + html.escape(transport) + "</b>\n\n"
-        "📡 <b>" + html.escape(profile["label"]) + "</b>\n"
-        "Server: <code>" + html.escape(host) + "</code>\n"
-        "Port: <code>" + str(port) + "</code>\n"
-        "Secret: <code>" + secret + "</code>"
-        + disclaimer
+        "🔷 <b>BLUE PROXY</b>\n"
+        "📡 <b>" + html.escape(profile["label"]) + "</b>\n\n"
+        "🌐 <b>Server:</b> <code>" + html.escape(host) + "</code>\n"
+        "🔌 <b>Port:</b> <code>" + str(port) + "</code>\n"
+        "🔑 <b>Secret:</b> <code>" + html.escape(secret) + "</code>\n\n"
+        "<i>" + transport + compatibility + "</i>"
     )
-    return {"text": message, "parse_mode": "HTML",
-            "reply_markup": {"inline_keyboard": [[{"text": label, "url": url}]]}}
+    return {
+        "text": message,
+        "parse_mode": "HTML",
+        "reply_markup": {"inline_keyboard": [[{"text": button, "url": url}]]},
+    }
 
 
 def publish(profile_id, *, token=None, channel=None):
