@@ -43,6 +43,15 @@ class TelegramBotTests(unittest.TestCase):
         self.assertEqual(new["posted"], ["main", "p123"])
         self.assertEqual(settings.CONFIG.stat().st_mode & 0o777, 0o600)
 
+    def test_new_bot_token_resets_update_cursor(self):
+        self.configured()
+        settings.update_config(lambda data: data.__setitem__("offset", 501))
+        settings.configure("987654321:" + "B" * 35, "123", "@testchannel", False, ["main"])
+        self.assertEqual(settings.get_config()["offset"], 0)
+
+    def test_panel_template_compiles(self):
+        bot.app.jinja_env.get_template("manager.html")
+
     def test_validation_rejects_invalid_settings(self):
         with self.assertRaises(ValueError):
             settings.configure("not-a-token", "123", "@testchannel", False, [])
