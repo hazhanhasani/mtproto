@@ -81,6 +81,46 @@ for path in getProxySecret getProxyConfig; do
 done
 ```
 
+## Recovery from Go toolchain HTTP 404 on Ubuntu resolute (26.04)
+
+If the log ends with:
+
+```text
+[Telegram config] Verified proxy-secret (128 bytes)
+[Telegram config] Verified proxy-multi.conf (821 bytes)
+curl: (22) The requested URL returned error: 404
+```
+
+the **Telegram configuration downloads are already working**. The next step in
+the pinned upstream installer attempts to retrieve the Go compiler archive
+`go1.26.5.linux-amd64.tar.gz` from `go.dev/dl/` (which redirects to a Google
+download endpoint). On some VPS networks the redirect may produce HTTP 404.
+The Go release file itself is published and has a documented SHA-256 checksum.
+
+The fixed installer now runs `vps/ensure-go.sh` **before** the upstream build.
+It first accepts an installed Go >= 1.20, then tries the distro's
+`golang-go` package, and only if that is unavailable or too old, attempts
+multiple HTTPS download origins with the official Go 1.26.5 SHA-256 check.
+
+In Ubuntu **resolute (26.04)**, `golang-go` is packaged as Go 1.26,
+so the normal solution is entirely through `apt`.
+
+Rerun the same single-command bootstrap, without deleting
+`/opt/MTProxy` or `/etc/mtproxy`. It pulls the new code and retains
+the already compiled MTProxy binary on a pre-configuration partial install.
+
+To confirm just the runtime version on your server:
+
+```bash
+go version || true
+apt-cache policy golang-go
+```
+
+If this does not advance, inspect the exact failing URL via
+`bash -x /opt/telegram-tproxy-server/deploy/install.sh ...` **only after reviewing
+its arguments**. Do not print passwords, secrets or session information in
+public logs.
+
 ## Managing sponsors
 
 Each profile has an independent 16-byte secret, public TCP MTProto port (10443 + slot), backend process, optional channel reference, official 32-hex `Ad Tag`, WEB carrier and enable toggle. The channel reference is internal metadata; a promoted channel **must** be configured with Telegram using [@MTProxyBot](https://t.me/MTProxyBot).
