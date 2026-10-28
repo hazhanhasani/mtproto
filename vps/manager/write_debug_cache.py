@@ -12,7 +12,10 @@ from pathlib import Path
 import sys
 import tempfile
 
-try:\n    from .debug import collect, check\nexcept ImportError:  # root systemd script is invoked by file path\n    from debug import collect, check
+try:
+    from .debug import collect, check
+except ImportError:  # root systemd script is invoked by file path
+    from debug import collect, check
 
 CACHE_DIR = Path("/var/cache/blue-mtproxy-debug")
 CACHE = CACHE_DIR / "report.json"
