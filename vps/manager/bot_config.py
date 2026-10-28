@@ -101,8 +101,9 @@ def configure(token, admin_id, channel_id, auto_publish, profile_ids):
     profile_ids = list(profile_ids)
 
     def change(data):
-        if token:
+        if token and token != data["token"]:
             data["token"] = token
+            data["offset"] = 0
         before_channel = data["channel_id"]
         before_auto = data["auto_publish"]
         data["admin_id"] = uid
