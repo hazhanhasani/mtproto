@@ -242,6 +242,53 @@ profile/encoded link secret. Do not copy the secret from a root-hostname
 proxy into a different path proxy. See the upstream
 [WEB link/base-path specification](https://github.com/telegramdesktop/tproxy-server/blob/master/BASE_PATH.md).
 
+## Repair MTProxy backend startup when /debug reports TCP and readiness failures
+
+If `/debug` shows `service_caddy=ok`, `service_tproxy_server=ok`,
+`web_bridge=ok` and `relay_config=ok`, but for the main profile reports
+`mtproxy_service=fail`, `mtproxy_tcp=fail`, and `relay_ready=fail`,
+the WEB front door is healthy while its MTProxy destination is unavailable.
+
+**Root-cause bug fixed in the installer:** it previously made
+`/etc/blue-mtproxy` mode `0750` owned by `root:bluepanel`. However,
+the per-secret service runs as Unix user `mtproxy`. That user cannot traverse
+the parent path, even though `runtime/` and `runtime/main.json` have
+the correct `root:mtproxy` ownership. The backend process consequently
+fails to load its own profile. The installer and root reconciler now set
+the parent to `0711` (traversal only, no public directory listing), keep
+`runtime/` at `0750 root:mtproxy`, and profile JSON files at
+`0640 root:mtproxy`. The panel's `panel.env` stays `0640
+root:bluepanel`, and all secrets remain unchanged.
+
+**Safe repair for an existing VPS (do not reinstall):**
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/repair-backend.sh
+```
+
+The repair validates that existing paths are genuine directories and have
+the expected owner, fixes permissions, verifies that the actual `mtproxy`
+service user can read each active profile, restarts the affected backend
+process(es), and probes the local MTProto TCP listener. It does not alter
+TLS certificates, secret values, sponsor Ad Tags or panel credentials.
+
+On success, `/debug` should show `mtproxy_service=ok`,
+`mtproxy_tcp=ok` and `relay_ready=ok`. The report is produced on a timer,
+so allow for the next cache refresh before checking.
+
+If the backend still fails, inspect only redacted failure details (never send
+the full secret-containing `systemctl show -p ExecStart`):
+
+```bash
+sudo systemctl show blue-mtproxy@main.service -p Result -p ExecMainCode -p ExecMainStatus --no-pager
+sudo journalctl -u blue-mtproxy@main.service -n 60 --no-pager
+```
+
+Redact any client Secrets or server credentials before sharing logs.
+A healthy local backend does not prove that the *external* TCP port is
+reachable from the phone's network or that the experimental WEB transport
+is supported by the phone's Telegram client.
+
 ## Administrator /debug — safe root-cause diagnostics
 
 **Cause of initial `helper: fail`:** `blue-mtproxy-panel.service` uses
