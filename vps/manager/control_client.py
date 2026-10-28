@@ -3,7 +3,7 @@ import json
 import socket
 
 CONTROL_SOCKET = "/run/blue-mtproxy-control/command.sock"
-ALLOWED_ACTIONS = frozenset({"apply", "update"})
+ALLOWED_ACTIONS = frozenset({"apply", "update", "ping"})
 
 
 def dispatch(action, timeout=120):
