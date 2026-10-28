@@ -1,5 +1,33 @@
 # Blue Proxy Manager — VPS Installation
 
+## Half-hour Telegram channel post scheduling
+
+The channel bot supports optional scheduled re-posting for individual
+inbounds. Sign in to `/bot` or open the inbound detail page and select
+**فعال‌سازی ۳۰ دقیقه‌ای** for the desired inbound. Each selected enabled
+inbound is sent at minute `00` and `30` of the server's local clock
+(48 channel posts per full day per inbound). Disabling the toggle stops
+scheduled posting for that inbound only; manual publishing still works.
+
+The systemd `blue-mtproxy-telegram-cron.timer` runs a dedicated
+unprivileged oneshot, independent of bot long-polling, using the existing
+channel and inbound Secret. It records a successful delivery per
+30-minute slot, so re-running the service within that slot won't duplicate
+the post. Missing/disabled inbounds are skipped. Network or Telegram errors
+remain visible in the timer service journal and will be retried on the
+next tick. Existing deployments keep scheduling **off** after upgrade
+until the admin explicitly opts an inbound in.
+
+To verify deployment:
+
+```bash
+sudo systemctl list-timers blue-mtproxy-telegram-cron.timer --no-pager
+sudo systemctl status blue-mtproxy-telegram-cron.timer --no-pager
+sudo journalctl -u blue-mtproxy-telegram-cron.service -n 30 --no-pager
+```
+
+---
+
 ## Telegram channel publishing bot (UI 0.5.0)
 
 The admin panel now has a dedicated **/bot** page. The unprivileged
