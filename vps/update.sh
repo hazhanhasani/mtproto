@@ -36,9 +36,10 @@ rollback() {
 }
 trap rollback ERR
 git -C "$repo" reset --hard "$target"
-bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh"
+bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/install-debug.sh"
 "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt"
 bash "$repo/vps/panel-permissions.sh"
+BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
 "$repo/.venv/bin/python3" -m unittest discover -s "$repo/vps/tests" -v
 systemctl restart blue-mtproxy-panel.service
 for i in 1 2 3 4 5 6 7 8 9 10; do
