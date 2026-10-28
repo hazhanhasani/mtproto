@@ -1,5 +1,31 @@
 # Blue Proxy Manager — VPS Installation
 
+## Visible Add User controls (UI 0.4.0)
+
+The dashboard and the inbound list provide a **+ افزودن کاربر** shortcut.
+The **/users** page now has a real form at the top, with a user label
+and an inbound selector. Submitting it creates an independent random
+32-hex user Secret via the existing authenticated CSRF-protected
+management reconciler, then redirects to that inbound's detail view
+so the dedicated WEB link can be copied. The global Users table also
+has an immediate Enable/Disable control. The inbound detail page has
+its own Add User button and user edit cards.
+
+If a running VPS still shows the older Users list without an Add
+button, the source was updated in GitHub but the Gunicorn web process
+was not reloaded. For a **web-panel-only refresh** that does not
+reapply the proxy configuration or touch active connections:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo systemctl restart blue-mtproxy-panel.service
+```
+
+Then open `https://<your-panel-domain>/users` while signed in.
+The authenticated `/version` route returns `{"ui_version":"0.4.0"}`
+alongside installed feature names. A logged-out client is redirected
+to the sign-in page; no version details or private Secret are exposed
+by an unauthenticated request.
+
 ## 2026 Inbound-centric control center (Xray-inspired interface)
 
 The new authenticated Persian/RTL panel includes distinct pages:
