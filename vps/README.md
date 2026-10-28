@@ -8,7 +8,7 @@ WEB-capable Telegram client -> HTTPS 443 -> Caddy -> Telegram Desktop tproxy-ser
 
 Standard Telegram client -> TCP 10443 + profile slot -> official MTProxy -> Telegram
 
-Admin -> HTTPS panel domain -> Caddy -> Flask/Gunicorn (127.0.0.1:8750) -> restricted root config reconciler
+Admin -> HTTPS panel -> Caddy -> isolated Flask (NoNewPrivileges=yes) -> group-only UNIX control socket -> root-only validator/reconciler
 
 ## Prerequisites
 
@@ -289,6 +289,61 @@ A healthy local backend does not prove that the *external* TCP port is
 reachable from the phone's network or that the experimental WEB transport
 is supported by the phone's Telegram client.
 
+## Repair "sudo: The no new privileges flag is set" in the admin panel
+
+On older installations, the root-only backend and `/debug` may be fully
+healthy while clicking **Save**, **Create Proxy**, **Rotate Secret**, **Delete**,
+**Auto Update toggle**, or **Check GitHub Updates** returns:
+
+```text
+sudo: The "no new privileges" flag is set
+```
+
+The web service intentionally runs with `NoNewPrivileges=yes`, so a direct
+`sudo` from Flask can never succeed. **Do not turn this sandbox off.**
+The control-plane now sends only exact, authorized commands across a UNIX socket
+(`/run/blue-mtproxy-control/command.sock`, root:bluepanel mode 0660) to a
+dedicated root-owned systemd service. Peer credentials are verified with
+Linux `SO_PEERCRED`; only the `bluepanel` UID and root can use it.
+Only `ping`, `apply`, and `update` are accepted, with no arbitrary
+shell, file, or command arguments. The existing strict state validator and
+root reconciler continue to protect the backend.
+
+**Apply the fix on the existing VPS without reinstalling or rotating Secrets:**
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-control.sh
+```
+
+The installer creates and enables `blue-mtproxy-control.service`, checks a
+real unprivileged IPC round-trip as `bluepanel`, removes the ineffective
+web sudoers allowance, and restarts **only the panel service**.
+It does not regenerate certificates, SSH accounts, client links, sponsor tags,
+or existing proxy instances. The GitHub auto-updater also maintains the
+control broker after future code changes.
+
+**Functional verification:** With a logged-in admin session, change only the
+label of the existing profile and press **Save**; the change should persist
+without the sudo error. Then test creating a second profile and saving its
+optional channel reference. Do not rotate an existing Secret merely to test
+the panel, as rotation intentionally invalidates old links.
+
+For read-only service diagnostics:
+
+```bash
+sudo systemctl is-active blue-mtproxy-control.service
+sudo journalctl -u blue-mtproxy-control.service -n 30 --no-pager
+sudo -u bluepanel test -w /run/blue-mtproxy-control/command.sock && echo socket-permissions-ok
+sudo systemctl start blue-mtproxy-debug.service
+```
+
+The control broker has a fixed action vocabulary and returns generic
+errors; its journal contains error categories without client Secrets. A
+successful server `/debug` still does not prove the user's Telegram WEB
+client supports the experimental protocol. For broad compatibility, use
+the standard `t.me/proxy` MTProto link and independently verify external TCP
+port `10443 + slot`.
+
 ## Administrator /debug — safe root-cause diagnostics
 
 **Cause of initial `helper: fail`:** `blue-mtproxy-panel.service` uses
@@ -377,7 +432,7 @@ The updater updates **the control plane only**, not the upstream Telegram/Caddy 
 ## Safety and limits
 
 - VPS installs have **not been smoke-tested on a live VM** yet. CI covers Python validation and shell syntax; do not assume production readiness without end-to-end connectivity, long connection tests and backup/restore drills.
-- The panel runs as `bluepanel`; privilege escalation is limited to a validated fixed-argument reconciler and an updater systemd unit. Session cookies are HTTP-only, Secure, SameSite Strict, with CSRF tokens, strict CSP and scrypt password hashing.
+- The panel runs as `bluepanel` with NoNewPrivileges enabled. A root-owned UNIX socket service authorizes the bluepanel UID for only a fixed set of actions, validates all state, and delegates applying changes to the root reconciler. Session cookies are HTTP-only, Secure, SameSite Strict, with CSRF tokens, strict CSP and scrypt password hashing.
 - The reconciler validates profile IDs, secrets, tags, ports and carrier modes before applying configs. Old secrets stop working upon rotation; connected sessions may disconnect during changes.
 - Protect your SSH access and backups. Sensitive data is stored in `/var/lib/blue-mtproxy/state.json` (mode `0600`) and `/etc/blue-mtproxy/panel.env`. Back up these files, `/etc/tproxy-server/token.key` and `/etc/tproxy-server/config.json` securely off-host.
 - The WEB relay is based on a **proof of concept**: [telegramdesktop/tproxy-server](https://github.com/telegramdesktop/tproxy-server). MTProxy is built from [TelegramMessenger/MTProxy](https://github.com/TelegramMessenger/MTProxy). The Cloudflare Worker directory is a separate experimental alternative.
