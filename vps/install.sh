@@ -87,6 +87,9 @@ install -d -m 0700 -o bluepanel -g bluepanel /var/lib/blue-mtproxy
 
 python3 -m venv /opt/blue-mtproxy/.venv
 /opt/blue-mtproxy/.venv/bin/pip install --disable-pip-version-check -r /opt/blue-mtproxy/vps/requirements.txt
+# The installer uses umask 077; bluepanel cannot run Gunicorn until the
+# root-owned venv is readable/executable by the service account.
+bash /opt/blue-mtproxy/vps/panel-permissions.sh
 HASH="$(PANEL_PASSWORD="$ADMIN_PASSWORD" /opt/blue-mtproxy/.venv/bin/python -c 'import os; from werkzeug.security import generate_password_hash; print(generate_password_hash(os.environ["PANEL_PASSWORD"],method="scrypt"))')"
 PANEL_KEY="$(openssl rand -hex 32)"
 printf 'PANEL_ADMIN_PASSWORD_HASH="%s"\nPANEL_SECRET_KEY=%s\n' "$HASH" "$PANEL_KEY" \
