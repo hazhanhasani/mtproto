@@ -110,4 +110,14 @@ if curl --noproxy '*' -fsS --max-time 7 http://127.0.0.1:8081/readyz >/dev/null;
 else
   echo "[warning] MTProxy backend is healthy, but relay readiness still needs checking."
 fi
+# The /debug page reads a redacted snapshot from a root-only timer.
+# Refresh the snapshot immediately after recovery instead of showing stale
+# failures until the next periodic timer tick.
+if systemctl cat blue-mtproxy-debug.service >/dev/null 2>&1; then
+  if systemctl start blue-mtproxy-debug.service; then
+    echo "[ok] /debug snapshot refreshed after backend repair."
+  else
+    echo "[warning] /debug refresh failed; investigate blue-mtproxy-debug.service." >&2
+  fi
+fi
 echo "[done] Backend permissions repaired; SSL, sponsors, secrets and admin credentials unchanged."
