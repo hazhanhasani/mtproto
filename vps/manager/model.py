@@ -58,6 +58,8 @@ def validate(state):
             raise ValueError("invalid enabled")
         if p.get("carrier", "websocket") not in CARRIERS:
             raise ValueError("invalid carrier")
+        # Reserve this inbound's owner secret before validating client secrets.
+        seen_secrets.add(secret)
         clients = p.get("clients", [])
         if not isinstance(clients, list) or len(clients) > MAX_CLIENTS_PER_INBOUND:
             raise ValueError("invalid inbound client count")
@@ -82,7 +84,6 @@ def validate(state):
         enabled += bool(p["enabled"])
         active_secrets += bool(p["enabled"])  # backward-compatible inbound/owner secret
         seen_ids.add(p["id"])
-        seen_secrets.add(secret)
         seen_slots.add(slot)
     if not enabled:
         raise ValueError("at least one profile must be enabled")
