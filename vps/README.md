@@ -242,60 +242,62 @@ profile/encoded link secret. Do not copy the secret from a root-hostname
 proxy into a different path proxy. See the upstream
 [WEB link/base-path specification](https://github.com/telegramdesktop/tproxy-server/blob/master/BASE_PATH.md).
 
-## Administrator /debug: root-cause diagnostics without exposing secrets
+## Administrator /debug — safe root-cause diagnostics
 
-A standard Telegram client may report **WEB unavailable** even while Caddy
-HTTPS, the WEB bridge, and the MTProxy backend are healthy. The upstream
-[tproxy-server reference](https://github.com/telegramdesktop/tproxy-server)
-documents WEB as a proof of concept with specific Desktop/Android test clients,
-and warns that the public `t.me/webproxy` route is not generally registered.
-A normal `t.me/proxy` MTProto link is the preferred client-compatibility
-baseline; it is on TCP `10443+slot` and must be reachable in the VPS provider
-firewall. Standard Cloudflare HTTP proxying cannot forward arbitrary MTProto TCP;
-the separate Cloudflare Spectrum product is designed for L4 proxying.
+**Cause of initial `helper: fail`:** `blue-mtproxy-panel.service` uses
+`NoNewPrivileges=yes`, which prevents setuid `sudo` escalation even with a
+permissive `sudoers` rule. The initial diagnostic helper tried to invoke sudo
+from Flask and therefore could not generate a report. The sandbox was behaving
+as designed; disabling `NoNewPrivileges` would weaken isolation.
 
-**After initial installation**, run this idempotent one-line updater on the
-existing VPS (it does not touch TLS, the state database or proxy secrets):
+The corrected design uses a **root-owned one-shot systemd service and timer**.
+The service performs bounded read-only tests and publishes only redacted JSON
+to `/var/cache/blue-mtproxy-debug/report.json` owned by root with group
+`bluepanel` (mode 0640; parent mode 0750). Flask does not use sudo or
+execute a root command. The snapshot refreshes about every 90 seconds.
+An administrator can refresh it manually via
+`sudo systemctl start blue-mtproxy-debug.service`.
+
+On an existing VPS, repair `/debug` **without reinstalling**:
 
 ```bash
 sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-debug.sh
 ```
 
-Sign into the admin panel and open `https://YOUR-PANEL-DOMAIN/debug`. The
-navbar also contains a **/debug** shortcut. For sharing a result, open
-`/debug.json` on the **panel** hostname. Both endpoints require an authenticated
-admin session and add `Cache-Control: no-store`. A fixed-argument, privileged,
-read-only helper collects the result; no Secret, Ad Tag, credentials, bridge
-capability, origin file contents or raw request URL is returned.
+Sign in to the panel at `https://YOUR-PANEL-DOMAIN/debug`, or read the
+redacted JSON via `/debug.json`. Both endpoints require a logged-in
+admin session and return `Cache-Control: no-store`. They never expose raw
+credentials, Secret, Ad Tag, bridge HMAC, or unredacted log lines.
 
-Each diagnostic report includes:
+Checks include Caddy and relay systemd activity, loopback readiness,
+per-profile MTProxy process and local TCP port, exact panel/relay profile
+agreement, and an authenticated WEB bridge request over publicly trusted TLS.
+It also shows NAT Middle-End warnings and warns that actual client WEB
+compatibility and external TCP accessibility **remain unverified**.
 
-- local systemd readiness of Caddy, WEB Relay, and admin panel;
-- WEB Relay `/readyz` status;
-- each enabled official MTProxy backend's systemd status and local TCP port;
-- matching panel/relay backend configuration (without printing the secret);
-- an authenticated WEB bridge request over SNI-validated HTTPS (not just the
-  decoy homepage);
-- counts of recurring MTProxy Middle-End disconnections as a NAT warning;
-- explicit warnings that client compatibility and *external* TCP reachability
-  are not proven by server-side checks.
+The bridge probe budget is limited to six profiles per refresh. The web
+reader rejects stale reports older than five minutes and distinguishes
+`cache_missing`, `cache_stale`, `cache_permission`, and `cache_invalid`
+rather than returning a generic `helper` error.
 
-The probe budget limits expensive authenticated bridge checks to the first
-six enabled profiles. For more profiles, the JSON report marks untested ones as
-`skipped` instead of falsely reporting `ok`.
-
-You can also request the JSON report locally:
+**If the snapshot still fails**, run these read-only service diagnostics:
 
 ```bash
-sudo /usr/local/sbin/blue-mtproxy-debug
+sudo systemctl --no-pager --full status blue-mtproxy-debug.service
+sudo journalctl -u blue-mtproxy-debug.service -n 45 --no-pager
+sudo -u bluepanel test -r /var/cache/blue-mtproxy-debug/report.json && echo "panel can read report"
 ```
 
-If server-side checks all pass but the Telegram client still says unavailable,
-test the **standard MTProto** link from a mobile data connection and verify the
-VPS provider firewall allows inbound TCP `10443` (or the profile's shown port).
-Do not change SSL or rotate secrets to diagnose client-level WEB support.
-The /debug collector cannot test a real Telegram session from the user's phone;
-a successful authenticated bridge response proves only the server bridge stage.
+For immediate **root-only** debugging without relying on the panel, run
+`sudo python3 /opt/blue-mtproxy/vps/manager/debug.py` directly. This
+returns a redacted JSON snapshot.
+
+If all the server checks pass but your phone still marks the WEB proxy as
+unavailable, test the **standard MTProto** connection link from the panel
+(`t.me/proxy`), which requires external TCP port `10443 + slot`. The
+reference WEB protocol is a proof of concept with limited client support;
+its server tests cannot prove real Telegram-client compatibility or successful
+sponsored-channel display.
 
 ## Managing sponsors
 
