@@ -7,7 +7,8 @@ import secrets
 import subprocess
 import tempfile
 import time
-from datetime import timedelta\nfrom time import time as current_time
+from datetime import timedelta
+from time import time as current_time
 from pathlib import Path
 
 from flask import Flask, abort, flash, redirect, render_template_string, request, session, url_for
