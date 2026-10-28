@@ -35,7 +35,7 @@
       <div role="alert" class="alert {{'bad' if category=='error' else 'good'}}">{{message}}</div>
       {% endfor %}
       {% if section=='overview' %}
-      <div class="page-heading"><div><div class="eyebrow">OVERVIEW</div><h1>داشبورد مدیریت</h1><p>نمایی از اینباندها، کاربران و سلامت شبکه در یک صفحه.</p></div><a class="btn primary" href="{{url_for('inbounds')}}">مدیریت اینباندها <span>←</span></a></div>
+      <div class="page-heading"><div><div class="eyebrow">OVERVIEW</div><h1>داشبورد مدیریت</h1><p>نمایی از اینباندها، کاربران و سلامت شبکه در یک صفحه.</p></div><div class="heading-actions"><a class="btn primary" href="{{url_for('users')}}#add-user">+ افزودن کاربر</a><a class="btn" href="{{url_for('inbounds')}}">مدیریت اینباندها ←</a></div></div>
       <section class="metrics">
         <div class="metric"><div class="metric-head">اینباندها <span>◇</span></div><div class="metric-value">{{state.profiles|length}}</div><div class="metric-note">{{state.profiles|selectattr('enabled')|list|length}} فعال</div></div>
         <div class="metric"><div class="metric-head">کاربران مدیریت‌شده <span>♙</span></div><div class="metric-value">{{total_users}}</div><div class="metric-note">Secret اختصاصی و قابل قطع</div></div>
@@ -65,7 +65,7 @@
       </section>
 
       {% elif section=='inbounds' %}
-      <div class="page-heading"><div><div class="eyebrow">INBOUND MANAGEMENT</div><h1>اینباندها</h1><p>هر اینباند یک سرویس MTProxy مستقل با Secret، اسپانسر و کاربران مخصوص خودش است.</p></div></div>
+      <div class="page-heading"><div><div class="eyebrow">INBOUND MANAGEMENT</div><h1>اینباندها</h1><p>هر اینباند یک سرویس MTProxy مستقل با Secret، اسپانسر و کاربران مخصوص خودش است.</p></div><a class="btn primary" href="{{url_for('users')}}#add-user">+ افزودن کاربر</a></div>
       <div class="panel">
       <div class="panel-title"><h2>لیست اینباندها</h2><span class="hint">{{state.profiles|length}} از حداکثر ۳۲ اینباند</span></div><div class="filter"><input data-filter-table="inbounds-table" type="search" placeholder="جستجوی نام یا شناسه اینباند" aria-label="جستجوی اینباند"></div>
       <div class="table-wrap"><table class="listing" id="inbounds-table"><thead><tr><th>عنوان / شناسه</th><th>پورت داخلی</th><th>حالت</th><th>کاربران</th><th>اتصال</th><th>مدیریت</th></tr></thead><tbody>
@@ -85,7 +85,7 @@
 
       {% elif section=='detail' and selected %}
       {% set p=selected %}{% set metric=telemetry.get(p.id,{}) %}
-      <div class="page-heading"><div><div class="eyebrow">INBOUND / {{p.id}}</div><h1>{{p.label}}</h1><p>پورت داخلی <span class="mono">{{10443+p.slot}}</span> · {{p.carrier}} · یک Ad Tag برای اینباند</p></div><a class="btn" href="{{url_for('inbounds')}}">← بازگشت به اینباندها</a></div>
+      <div class="page-heading"><div><div class="eyebrow">INBOUND / {{p.id}}</div><h1>{{p.label}}</h1><p>پورت داخلی <span class="mono">{{10443+p.slot}}</span> · {{p.carrier}} · یک Ad Tag برای اینباند</p></div><div class="heading-actions"><a class="btn primary" href="#add-inbound-user">+ افزودن کاربر</a><a class="btn" href="{{url_for('inbounds')}}">← بازگشت به اینباندها</a></div></div>
       <section class="metrics three">
         <div class="metric"><div class="metric-head">وضعیت سرویس <span>◉</span></div><div class="metric-value state-value">{{'فعال' if services[p.id]=='ok' else 'خطا' if services[p.id]=='fail' else 'نامشخص'}}</div><div class="metric-note">MTProxy / WEB Relay</div></div>
         <div class="metric"><div class="metric-head">اتصالات زنده اینباند <span>⤴</span></div><div class="metric-value">{{metric.get('active_connections') if metric.get('active_connections') is not none else '—'}}</div><div class="metric-note">آمار تجمیعی از پورت stats</div></div>
@@ -114,7 +114,7 @@
         </div>
       </details>
       {% endfor %}
-      <form action="{{url_for('create_user',profile_id=p.id)}}" method="post" class="field-row add-user">
+      <form action="{{url_for('create_user',profile_id=p.id)}}" method="post" class="field-row add-user" id="add-inbound-user">
         <input type="hidden" name="_csrf" value="{{csrf}}">
         <div class="field grow"><label>افزودن کاربر به اینباند</label><input maxlength="80" required name="label" placeholder="مثلاً کاربر جدید"></div>
         <button class="btn primary" type="submit">+ ایجاد کاربر</button>
@@ -141,9 +141,25 @@
       </div>
 
       {% elif section=='users' %}
-      <div class="page-heading"><div><div class="eyebrow">ACCESS MANAGEMENT</div><h1>کاربران</h1><p>فهرست کاربران همهٔ اینباندها با Secret مستقل و وضعیت دسترسی.</p></div></div>
+      <div class="page-heading"><div><div class="eyebrow">ACCESS MANAGEMENT</div><h1>کاربران</h1><p>ساخت، مدیریت و قطع دسترسی کاربران در تمام اینباندها.</p></div><a class="btn primary" href="#add-user">+ افزودن کاربر جدید</a></div>
+      <section class="panel form-panel" id="add-user">
+        <div class="panel-title"><h2>افزودن کاربر</h2><span class="hint">یک اینباند انتخاب کن؛ Secret و لینک کاربر خودکار تولید می‌شود.</span></div>
+        <form method="post" action="{{url_for('create_user_global')}}" class="field-row">
+          <input type="hidden" name="_csrf" value="{{csrf}}">
+          <div class="field grow"><label for="new-user-label">نام کاربر</label><input id="new-user-label" name="label" required maxlength="80" placeholder="مثلاً کاربر شماره ۱" autocomplete="off"></div>
+          <div class="field grow"><label for="new-user-inbound">اینباند مقصد</label>
+            <select id="new-user-inbound" name="inbound_id" required>
+            {% for inbound in state.profiles %}
+              <option value="{{inbound.id}}" {{'selected' if inbound.id=='main' else ''}}>{{inbound.label}} ({{inbound.id}}){{' — غیرفعال' if not inbound.enabled else ''}}</option>
+            {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn primary">+ ساخت کاربر</button>
+        </form>
+        <p class="panel-note">بعد از ایجاد، وارد جزئیات اینباند می‌شوی و لینک اختصاصی WEB همان کاربر را می‌بینی. سقف Secretهای فعال WEB Relay برابر ۳۲ است.</p>
+      </section>
       <div class="panel"><div class="filter"><input type="search" data-filter-table="users-table" aria-label="جستجوی کاربر" placeholder="جستجوی کاربران و اینباندها"></div>
-      {% if not users %}<div class="empty">کاربری تعریف نشده. برای افزودن کاربر، وارد جزئیات یک اینباند شو.</div>{% endif %}
+      {% if not users %}<div class="empty">هنوز کاربری ثبت نشده است. از فرم «افزودن کاربر» در بالای همین صفحه استفاده کن.</div>{% endif %}
       <div class="table-wrap"><table id="users-table" class="listing"><thead><tr><th>کاربر</th><th>اینباند</th><th>دسترسی</th><th>مصرف کاربر</th><th>اتصال کاربر</th><th></th></tr></thead><tbody>
       {% for p,c in users %}<tr><td><strong>{{c.label}}</strong><div class="secondary-text">#{{c.id}}</div></td><td>{{p.label}}</td><td><span class="status {{'up' if c.enabled else 'down'}}">{{'مجاز' if c.enabled else 'قطع'}}</span></td><td class="muted">—</td><td class="muted">—</td><td><a href="{{url_for('inbound_detail',profile_id=p.id)}}" class="table-link">مدیریت ←</a></td></tr>{% endfor %}
       </tbody></table></div><p class="panel-note">برای مصرف و آنلاین‌بودن دقیق هر کاربر به حسابداری مستقل Secret در موتور انتقال نیاز است؛ به‌جای نمایش صفر ساختگی، «—» نشان داده می‌شود.</p></div>
@@ -157,7 +173,7 @@
       <form method="post" action="{{url_for('check_update')}}"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn wide-button" type="submit">بررسی نسخه جدید</button></form>
       </div></section>
       {% endif %}
-      <footer class="footer"><span>Blue Proxy Manager · VPS Edition</span><span>WEB experimental · Client limits not enforced · Telegram MTProxy</span></footer>
+      <footer class="footer"><span>Blue Proxy Manager · VPS Edition · UI {{ui_version}}</span><span>WEB experimental · Client limits not enforced · Telegram MTProxy</span></footer>
     </div>
   </main>
 </div><script defer src="{{url_for('static',filename='manager.js')}}"></script></body></html>
