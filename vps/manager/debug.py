@@ -21,10 +21,10 @@ from urllib.request import urlopen
 
 try:
     from .model import validate
-    from .telemetry import inbound_connections
+    from .telemetry import inbound_connections, relay_traffic
 except ImportError:  # direct root-owned command-line entrypoint
     from model import validate
-    from telemetry import inbound_connections
+    from telemetry import inbound_connections, relay_traffic
 
 STATE_PATH = Path("/var/lib/blue-mtproxy/state.json")
 RELAY_PATH = Path("/etc/tproxy-server/profiles.json")
@@ -204,7 +204,8 @@ def collect():
         "overall": "fail" if failures else "partial",
         "checks": checks,
         "profiles": profiles,
-        "note": "هیچ تستی جایگزین اتصال واقعی با کلاینت سازگار WEB یا MTProto نیست.",
+        "traffic": relay_traffic(),
+        "note": "آمار حجم صرفاً تجمیعی WEB Relay از زمان اجرای فرآیند است؛ مصرف تفکیکی کاربران قابل اندازه‌گیری نیست.",
     }
 
 
