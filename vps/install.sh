@@ -81,7 +81,9 @@ id mtproxy >/dev/null
 id tproxy >/dev/null
 id bluepanel >/dev/null 2>&1 || useradd --system --create-home \
   --home-dir /var/lib/blue-mtproxy --shell /usr/sbin/nologin bluepanel
-install -d -m 0750 -o root -g bluepanel /etc/blue-mtproxy
+# mtproxy needs to traverse this parent to read runtime/<id>.json.
+# 0711 allows path traversal, NOT directory listing or reading panel.env.
+install -d -m 0711 -o root -g bluepanel /etc/blue-mtproxy
 install -d -m 0750 -o root -g mtproxy /etc/blue-mtproxy/runtime
 install -d -m 0700 -o bluepanel -g bluepanel /var/lib/blue-mtproxy
 
