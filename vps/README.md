@@ -1,5 +1,77 @@
 # Blue Proxy Manager — VPS Installation
 
+## 2026 Inbound-centric control center (Xray-inspired interface)
+
+The new authenticated Persian/RTL panel includes distinct pages:
+
+- `/` — responsive dashboard, inbound counts, managed-user counts, live
+  **aggregate** active connection counters where the official backend stats
+  endpoint responds, and read-only service health.
+- `/inbounds` — all inbound profiles, local backend ports, sponsor status
+  and live connection counters. Each inbound remains an independent official
+  MTProxy process and Ad Tag.
+- `/inbounds/<id>` — an inbound's users, create/rename/enable/disable,
+  generate new user Secret, revoke a user, WEB connection links,
+  and all inbound settings and sponsor credentials.
+- `/users` — cross-inbound user register.
+- `/settings` — Cloudflare CDN-only state, hostnames and GitHub updates.
+- `/debug` — redacted diagnostics for system and inbound readiness.
+
+**Actual user access control:** The official MTProxy binary supports
+repeated `-S <secret>` arguments on the **same** backend. The WEB relay
+also accepts an independent profile/capability for each enabled user
+secret, pointing to that inbound's fixed backend port. Removing/disabling
+a user removes the Secret from the WEB relay and MTProxy at reconcile time,
+so future connections using that Secret stop working; active sessions
+can also be interrupted by the restart. Existing inbound/owner Secret
+remains for backward compatibility (and must not be shared as a user's
+dedicated credential). User accounts survive GitHub updates because
+they live inside the existing version-1 state file with an **optional**
+`clients` array; old installations without clients migrate lazily.
+
+**Critical capacity bound:** The upstream WEB relay default is
+`max_profiles: 32`. The controller rejects operations when the sum of
+enabled inbounds (owner profiles) and enabled users would exceed **32**
+WEB profiles. This is a strict validation rule, not a user quota.
+
+**What these metrics mean:**
+
+| Feature | Current implementation |
+| --- | --- |
+| User labels, isolated Secret and WEB link | Real and managed |
+| Enable, disable, revoke or rotate individual user | Enforced through MTProxy -S and relay profile reconciliation |
+| Inbound backend active connections | Read-only from official `127.0.0.1:8888+slot/stats` `total_special_connections` when available |
+| Per-user active connections / online | **Not available** in stock MTProxy/WEB relay |
+| Accurate byte consumption per inbound/user | **Not available**, panel displays — rather than fake usage |
+| Per-user traffic quota / expiry enforcement | **Not implemented**, do not bill clients or promise caps based on this panel |
+| WEB client compatibility | Still experimental; requires a supported custom Telegram client |
+| CDN-only | Preserved. Only HTTPS/WSS public 443, internal MTProxy ports remain blocked externally |
+
+For real per-user throughput accounting and hard quotas, the next
+backend phase requires a **per-user metered relay or a dedicated backend
+listener per user** and a persistent traffic ledger with restart-safe
+counter deltas. Do not infer byte usage from buffer-allocation counters
+or from inbound totals and divide it across users.
+
+### Applying the UI and user-management upgrade to an existing VPS
+
+The existing state file and credentials are preserved. Do **not** run the
+first-time installer on an active server. Pull code and reconfigure the
+control service in one command:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/install-control.sh
+```
+
+The installer performs a real apply with the previously configured
+inbound profiles before restarting the web panel, so failure cannot be
+silently reported as success. It does not issue replacement Secrets or
+change the public Cloudflare DNS settings. For a no-impact UI-only preview,
+run the new templates in a local test environment rather than replacing
+the production service.
+
+
+
 > **Experimental** WEB relay, official MTProto backend. Supported on clean x86_64 Debian 12+ / Ubuntu 22.04+. The upstream installer takes ownership of Caddy's public ports 80/443. Do not run on a busy VPS hosting other websites.
 
 ## Architecture
