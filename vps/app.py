@@ -15,6 +15,7 @@ from flask import Flask, abort, flash, redirect, render_template_string, request
 from werkzeug.security import check_password_hash
 
 from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
+from manager.control_client import dispatch
 
 STATE = Path("/var/lib/blue-mtproxy/state.json")
 LOCK = STATE.with_name("ui.lock")
@@ -153,19 +154,17 @@ def apply_mutation(change):
         validate(next_state)
         write_state(next_state)
         try:
-            proc = subprocess.run(
-                ["sudo", "-n", "/usr/local/sbin/blue-mtproxy-apply"],
-                capture_output=True, text=True, timeout=100, check=False,
-            )
-            if proc.returncode:
-                raise RuntimeError("خطا در اعمال تنظیمات سرویس‌ها. " + proc.stderr[-300:])
+            # This sends a fixed action over a bluepanel-only UNIX socket.
+            # The web service retains NoNewPrivileges=yes and never uses sudo.
+            dispatch("apply")
         except Exception:
             write_state(old)
-            # Restore the previous deployed state when reconciliation failed.
-            subprocess.run(
-                ["sudo", "-n", "/usr/local/sbin/blue-mtproxy-apply"],
-                capture_output=True, timeout=100, check=False,
-            )
+            # Best-effort restore of the previously deployed state. The
+            # root-owned broker validates state and owns every system change.
+            try:
+                dispatch("apply")
+            except (OSError, RuntimeError):
+                pass
             raise
 
 
@@ -289,14 +288,9 @@ def auto_update():
 @app.post("/settings/check-update")
 def check_update():
     try:
-        result = subprocess.run(
-            ["sudo", "-n", "/usr/bin/systemctl", "start", "--no-block", "blue-mtproxy-update-force.service"],
-            capture_output=True, text=True, timeout=180, check=False,
-        )
-        if result.returncode:
-            raise RuntimeError(result.stderr[-400:])
+        dispatch("update")
         flash("بررسی به‌روزرسانی در سرویس مستقل آغاز شد؛ نتیجه در ژورنال systemd ثبت می‌شود.", "success")
-    except Exception as exc:
+    except (ValueError, RuntimeError, OSError) as exc:
         flash(str(exc), "error")
     return redirect(url_for("index"))
 
