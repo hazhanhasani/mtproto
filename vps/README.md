@@ -17,25 +17,36 @@ Admin -> HTTPS panel domain -> Caddy -> Flask/Gunicorn (127.0.0.1:8750) -> restr
 - Open TCP 80, 443 and **10443-10474** in the provider firewall; if UFW is active, allow ports used by enabled profiles. Preserve SSH access.
 - Do **not** enable Cloudflare orange-cloud CDN on these proxy domains. It does not forward arbitrary MTProto TCP connections and the initial official WEB relay rollout is intended for direct-to-VPS connections.
 
-## One-command installation
+## One-command installation (including automatic SSL)
 
-Review the bootstrap before executing, then:
+First create two **DNS-only** A records for your VPS public IPv4, e.g.:
+`proxy.example.com` and `panel.example.com`. Cloudflare orange-cloud **must be disabled** for direct MTProto ports. Port 80/443 must be reachable from the public internet, as the certificate authority needs to validate domain ownership. Provider-level firewall ports may need to be opened in the VPS control panel.
+
+On a **fresh** Ubuntu / Debian x86_64 VPS, run this **single command**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hazhanhasani/mtproto/main/vps/bootstrap.sh -o /tmp/blue-proxy-bootstrap.sh
-sudo bash /tmp/blue-proxy-bootstrap.sh \
-  --domain proxy.example.com \
-  --panel-domain panel.example.com \
-  --email admin@example.com
+sudo bash -c 'set -euo pipefail; curl -fsSL https://raw.githubusercontent.com/hazhanhasani/mtproto/main/vps/bootstrap.sh | bash'
 ```
 
-The installer fetches Telegram Desktop's reference WEB relay at pinned commit
-`c8adb8b7c6b7fc46c12ae3acb68be9070c26a8e8`, runs its installer
-and builds official MTProxy. It generates a random WEB/MTProto secret and admin password, then enables the unprivileged admin panel, per-secret MTProxy systemd units, firewall rules and GitHub updater timer.
+The installer then asks for:
 
-**Retrieve credentials:** the installer prints them once and writes `/root/blue-mtproxy-credentials.txt` mode `0600`.
+1. **Proxy domain** — e.g. `proxy.example.com`.
+2. **Admin panel domain** — defaults to `panel.example.com` if the proxy domain is `proxy.example.com`; you can change it.
+3. **SSL certificate contact email** — e.g. `admin@example.com`.
 
-Panel username: `admin`, password: auto-generated. Panel URL: `https://panel.example.com`.
+Alternatively, pass everything non-interactively with one command:
+
+```bash
+sudo bash -c 'set -euo pipefail; curl -fsSL https://raw.githubusercontent.com/hazhanhasani/mtproto/main/vps/bootstrap.sh | bash -s -- --domain proxy.example.com --panel-domain panel.example.com --email admin@example.com'
+```
+
+The script automatically installs dependencies, pins and compiles the official Telegram relay and MTProxy, configures the Persian management panel and systemd auto-updater, generates random credentials, enables needed UFW rules **only if UFW is already active**, and installs Caddy. **Caddy obtains and automatically renews publicly trusted HTTPS certificates** for both domains. The installer verifies live TLS with normal trust verification (never `-k`), using SNI to reach the local Caddy listener. It does not print "installed" before both HTTPS checks succeed.
+
+The script refuses to overwrite an existing production webserver. Before changing upstream services, it checks that ports TCP 80 and 443 are locally free, both domains resolve directly to the VPS IPv4 and DNS-only, and the requested hostnames are well formed. If this preflight fails, correct DNS/firewall, then run the **same single command again**; a safe preflight-only rerun is supported. For special NAT ingress/egress topologies, `--skip-dns-check` is possible but not recommended.
+
+The installer prints the panel URL, generated username/password, connection links and stores credentials in `/root/blue-mtproxy-credentials.txt` with permissions `0600`.
+
+**Important limitation:** The installer cannot change your hosting provider's external firewall or Cloudflare DNS records without your account credentials. Those prerequisites must be configured once in their dashboards. If ACME certificate validation fails, the installer exits without claiming success, provides diagnostic commands and retains credentials for recovery.
 
 ## Managing sponsors
 
