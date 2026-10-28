@@ -450,66 +450,6 @@ LOGIN_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset="ut
 <div><label>رمز عبور</label><input required type="password" name="password" autocomplete="current-password"></div>
 <button type="submit">ورود به داشبورد</button></form></main></body></html>"""
 
-DASHBOARD_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Blue Proxy Manager</title>
-<style>""" + STYLE + """</style></head><body><main class="shell">
-<nav><div><div class="logo"><span class="mark">B</span>Blue Proxy Manager</div><div class="sub">WEB Proxy · VPS Control Center</div></div>
-<div class="actions"><a href="{{url_for('debug_dashboard')}}" class="pill">🩺 /debug</a></div>
-<form action="{{url_for('logout')}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="secondary">خروج امن</button></form></nav>
-<h1>داشبورد مدیریت</h1><p class="sub">مدیریت مستقل Secret، کانال اسپانسر و Ad Tag در یک سرور</p>
-{% for category,message in get_flashed_messages(with_categories=true) %}<div class="notice {{ 'error' if category=='error' else '' }}">{{message}}</div>{% endfor %}
-<section class="cards">
-<div class="card"><div class="sub">کل پروکسی‌ها</div><div class="metric">{{state.profiles|length}}</div></div>
-<div class="card"><div class="sub">پروکسی‌های فعال</div><div class="metric">{{state.profiles|selectattr('enabled')|list|length}}</div></div>
-<div class="card"><div class="sub">دارای Ad Tag</div><div class="metric">{{state.profiles|selectattr('ad_tag')|list|length}}</div></div>
-</section>
-<div class="header"><h2>لیست پروکسی‌ها</h2><div class="pill">{{state.hostname}}</div></div>
-<section class="grid">
-{% for p in state.profiles %}
-<article class="card profile">
-<div class="header"><strong>{{p.label}}</strong><span class="pill {{'ok' if services[p.id]=='active' else ''}}">{{services[p.id] or 'unknown'}}</span></div>
-<div class="sub">شناسه {{p.id}} · پورت داخلی MTProxy {{10443+p.slot}}</div>
-{% if cdn_only %}
-<div class="notice">حالت Cloudflare CDN-only فعال است. اتصال عمومی فقط از مسیر HTTPS/WSS پورت 443 انجام می‌شود؛ MTProxy روی این پورت داخلی است و لینک استاندارد MTProto از CDN عادی عبور نمی‌کند.</div>
-<div><label>لینک WEB آزمایشی از مسیر Cloudflare (کلاینت سازگار ضروری است)</label><code>{{links[p.id]}}</code></div>
-{% else %}
-<div><label>لینک مستقیم MTProto (خارج از CDN)</label><code>{{direct_links[p.id]}}</code></div>
-<div><label>لینک WEB آزمایشی (HTTPS/WSS 443)</label><code>{{links[p.id]}}</code></div>
-{% endif %}
-<div class="sub">WEB بدون پشتیبانی ویژه در کلاینت ممکن است «غیر قابل دسترس» نشان داده شود؛ سلامت SSL کافی نیست.</div>
-<form action="{{url_for('update_profile',profile_id=p.id)}}" method="post" class="profile">
-<input type="hidden" name="_csrf" value="{{csrf}}">
-<div><label>عنوان پروکسی</label><input required maxlength="80" name="label" value="{{p.label}}"></div>
-<div><label>Secret (32-hex؛ تغییر آن لینک‌های قبلی را غیرفعال می‌کند)</label><input required maxlength="32" minlength="32" pattern="[0-9a-fA-F]{32}" name="secret" value="{{p.secret}}" autocomplete="off"></div>
-<div><label>کانال اسپانسر (برای مدیریت داخلی)</label><input name="channel" placeholder="@mychannel" value="{{p.channel}}"></div>
-<div><label>Ad Tag دریافتی از @MTProxyBot</label><input name="ad_tag" maxlength="32" pattern="[0-9a-fA-F]{32}" placeholder="32 hex chars" value="{{p.ad_tag}}"></div>
-<div><label>حالت انتقال WEB</label><select name="carrier">{% for m in carriers %}<option value="{{m}}" {{'selected' if p.carrier==m else ''}}>{{m}}</option>{% endfor %}</select></div>
-<label class="switch"><input type="checkbox" name="enabled" {{'checked' if p.enabled else ''}}> فعال باشد</label>
-<button>ذخیره تنظیمات</button></form>
-<div class="actions">
-<form action="{{url_for('rotate_profile',profile_id=p.id)}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="secondary" title="Old links stop working">تولید Secret جدید</button></form>
-<form action="{{url_for('delete_profile',profile_id=p.id)}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="danger">حذف</button></form>
-</div>
-</article>
-{% endfor %}
-<article class="card profile">
-<h2>افزودن پروکسی</h2><p class="sub">هر پروکسی Secret و نمونه MTProxy مستقل دارد و امکان تنظیم Ad Tag جداگانه فراهم است.</p>
-<form action="{{url_for('add_profile')}}" method="post" class="profile"><input type="hidden" name="_csrf" value="{{csrf}}">
-<div><label>نام پروکسی جدید</label><input required maxlength="80" name="label" placeholder="Sponsor A"></div><button>+ ساخت پروکسی</button></form>
-</article></section>
-<section class="card" style="margin-top:18px">
-<h2>آپدیت خودکار از GitHub</h2>
-<div class="sub">شاخه main · hazhanhasani/mtproto · بررسی دوره‌ای با systemd timer</div><hr>
-<form action="{{url_for('auto_update')}}" method="post" class="inline">
-<input type="hidden" name="_csrf" value="{{csrf}}"><label class="switch"><input type="checkbox" name="enabled" {{'checked' if state.auto_update else ''}}> آپدیت خودکار فعال</label>
-<button class="secondary">ذخیره</button></form>
-<hr><form action="{{url_for('check_update')}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button>بررسی آپدیت اکنون</button></form>
-</section><div class="notice">
-کانال اسپانسر توسط Telegram و Ad Tag رسمی نمایش داده می‌شود؛ تغییر فیلد کانال به‌تنهایی باعث ثبت آن در تلگرام نخواهد شد.
-</div><small>Proxy carrier: experimental WEB. Only WEB-capable Telegram clients can use these links.</small>
-</main></body></html>"""
-
-
 DEBUG_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Blue Proxy · Debug</title>
 <style>""" + STYLE + """
