@@ -86,6 +86,11 @@ class UserSecretTests(unittest.TestCase):
 
 class ManagementUITests(unittest.TestCase):
     def setUp(self):
+        auth = patch.dict(os.environ, {
+            "PANEL_ADMIN_PASSWORD_HASH": generate_password_hash("correct-test-password"),
+        })
+        auth.start()
+        self.addCleanup(auth.stop)
         app.app.config.update(TESTING=True)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
