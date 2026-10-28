@@ -74,7 +74,7 @@ class PublisherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, \
              patch.object(write_debug_cache.os, "geteuid", return_value=0), \
              patch.object(write_debug_cache.os, "chown"), \
-             patch.object(write_debug_cache.grp, "getgrnam", return_value=type("G", (), {"gr_gid": 123})()):
+             patch("grp.getgrnam", return_value=type("G", (), {"gr_gid": 123})()):
             write_debug_cache.publish(report(), directory=Path(d, "root-cache"))
             dest = Path(d, "root-cache", "report.json")
             self.assertEqual(dest.stat().st_mode & 0o777, 0o640)
