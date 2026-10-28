@@ -36,11 +36,14 @@ rollback() {
 }
 trap rollback ERR
 git -C "$repo" reset --hard "$target"
-bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh"
+bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh" "$repo/vps/install-control.sh"
 "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt"
 bash "$repo/vps/panel-permissions.sh"
 BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
 "$repo/.venv/bin/python3" -m unittest discover -s "$repo/vps/tests" -v
+# The control broker is running older imported Python code after a Git
+# update; restart it before the panel starts sending new operations.
+BLUE_CONTROL_NO_RESTART=1 bash "$repo/vps/install-control.sh"
 systemctl restart blue-mtproxy-panel.service
 for i in 1 2 3 4 5 6 7 8 9 10; do
   if curl --silent --fail --max-time 2 http://127.0.0.1:8750/healthz | grep -q '"ok":true'; then
