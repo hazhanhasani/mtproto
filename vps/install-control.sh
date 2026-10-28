@@ -81,5 +81,19 @@ fi
 
 if [[ "${BLUE_CONTROL_NO_RESTART:-0}" != "1" ]]; then
   systemctl restart blue-mtproxy-panel.service
-  echo "[ok] Panel reloaded. Config changes now use the restricted socket broker."
+  panel_ready=0
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if curl --noproxy '*' --silent --fail --max-time 3 \
+        http://127.0.0.1:8750/healthz | grep -q '"ok":true'; then
+      panel_ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$panel_ready" != 1 ]]; then
+    echo "[error] Admin panel did not become healthy after restart." >&2
+    echo "Inspect: sudo systemctl status blue-mtproxy-panel --no-pager" >&2
+    exit 1
+  fi
+  echo "[ok] Panel health verified; config changes now use the restricted socket broker."
 fi
