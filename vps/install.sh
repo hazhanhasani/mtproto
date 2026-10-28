@@ -271,10 +271,7 @@ chmod 0600 /root/blue-mtproxy-credentials.txt
 echo "Verifying automatic HTTPS certificates from Caddy..."
 SSL_READY=0
 for attempt in {1..24}; do
-  if curl --noproxy '*' --fail --silent --max-time 12 \
-      --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/" -o /dev/null \
-    && curl --noproxy '*' --fail --silent --max-time 12 \
-      --resolve "$PANEL:443:127.0.0.1" "https://$PANEL/login" -o /dev/null; then
+  if bash /opt/blue-mtproxy/vps/ssl-status.sh --quiet; then
     SSL_READY=1
     break
   fi
@@ -284,8 +281,10 @@ for attempt in {1..24}; do
   sleep 5
 done
 if [[ "$SSL_READY" != 1 ]]; then
-  echo "ERROR: Services installed, but valid SSL certificates have not been confirmed." >&2
-  echo "Check public DNS and provider firewall ports 80/443, then: journalctl -u caddy -n 100 --no-pager" >&2
+  echo "ERROR: Services are installed, but trusted HTTPS for both domains has not been verified." >&2
+  echo "Diagnostics (does not modify the VPS):" >&2
+  bash /opt/blue-mtproxy/vps/ssl-status.sh || true
+  echo "Check DNS and provider firewall TCP 80/443; do NOT re-run the installer." >&2
   echo "Credentials: /root/blue-mtproxy-credentials.txt" >&2
   exit 1
 fi
