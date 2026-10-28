@@ -1,0 +1,53 @@
+name: Mirror official Telegram MTProxy public config
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/telegram-config-cache.yml"
+  schedule:
+    - cron: '37 5 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: telegram-config-mirror
+  cancel-in-progress: false
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Download and validate official public Telegram MTProxy files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .telegram-cache
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 4 --connect-timeout 10 --max-time 50 \
+            --output "$tmp/proxy-secret" "https://core.telegram.org/getProxySecret"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 4 --connect-timeout 10 --max-time 50 \
+            --output "$tmp/proxy-multi.conf" "https://core.telegram.org/getProxyConfig"
+          test "$(wc -c < "$tmp/proxy-secret")" -eq 128
+          test "$(wc -c < "$tmp/proxy-multi.conf")" -ge 100
+          grep -q '^default ' "$tmp/proxy-multi.conf"
+          grep -q '^proxy_for ' "$tmp/proxy-multi.conf"
+          cp "$tmp/proxy-secret" .telegram-cache/proxy-secret
+          cp "$tmp/proxy-multi.conf" .telegram-cache/proxy-multi.conf
+          printf '%s\n' "Validated official Telegram files."
+      - name: Commit verified public fallback files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .telegram-cache/proxy-secret .telegram-cache/proxy-multi.conf
+          if git diff --cached --quiet; then
+            echo "Cache already current"
+            exit 0
+          fi
+          git commit -m "chore(telegram): refresh validated public proxy configuration [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main
