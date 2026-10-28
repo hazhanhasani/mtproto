@@ -229,16 +229,27 @@ def render_manager(section="overview", selected_id=None):
     user_records = [(p, c) for p in state["profiles"] for c in p.get("clients", [])]
     total_connections = [p["active_connections"] for p in telemetry.values()
                          if type(p.get("active_connections")) is int]
-    bot_data = get_bot_config()
-    bot_view = {
-        "admin_id": bot_data["admin_id"],
-        "channel_id": bot_data["channel_id"],
-        "auto_publish": bot_data["auto_publish"],
-        "token_set": bool(bot_data["token"]),
-        "ready": bot_ready(bot_data),
-    }
+    # The Telegram publisher is optional. Corrupt/inaccessible bot settings
+    # must never take the core admin dashboard, inbounds or user controls down.
+    # Fail closed: bot publishing remains disabled until its settings are fixed.
+    bot_settings_error = False
+    try:
+        bot_data = get_bot_config()
+        bot_view = {
+            "admin_id": bot_data["admin_id"],
+            "channel_id": bot_data["channel_id"],
+            "auto_publish": bot_data["auto_publish"],
+            "token_set": bool(bot_data["token"]),
+            "ready": bot_ready(bot_data),
+        }
+    except (ValueError, OSError, UnicodeError, TypeError, KeyError):
+        bot_settings_error = True
+        bot_view = {
+            "admin_id": 0, "channel_id": "", "auto_publish": False,
+            "token_set": False, "ready": False,
+        }
     return render_template(
-        "manager.html", bot=bot_view, ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
+        "manager.html", bot=bot_view, bot_settings_error=bot_settings_error, ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
         section=section, selected=selected, users=user_records,
         total_users=len(user_records), total_connections=(sum(total_connections)
         if total_connections and len(total_connections) ==
