@@ -22,7 +22,7 @@ chmod 0440 /etc/sudoers.d/blue-mtproxy-debug
 visudo -cf /etc/sudoers.d/blue-mtproxy-debug >/dev/null
 python3 -m py_compile /opt/blue-mtproxy/vps/manager/debug.py
 echo "[ok] Protected, read-only /debug helper and sudo policy installed."
-if systemctl is-enabled blue-mtproxy-panel.service >/dev/null 2>&1; then
+if [[ "${BLUE_DEBUG_NO_RESTART:-0}" != "1" ]] && systemctl is-enabled blue-mtproxy-panel.service >/dev/null 2>&1; then
   systemctl restart blue-mtproxy-panel.service
   echo "[ok] Panel restarted. Open https://PANEL_HOSTNAME/debug while signed in."
 fi
