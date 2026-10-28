@@ -12,11 +12,12 @@ id tproxy >/dev/null 2>&1 || {
   echo "tproxy service user does not exist." >&2
   exit 1
 }
-# Fix a legacy panel bug that wrote group-unreadable 0400 profiles.
-chown root:tproxy "$file"
-chmod 0640 "$file"
-runuser -u tproxy -- test -r "$file"
-echo "[ok] Relay profiles are readable by the dedicated service account."
+# The Go relay rejects group/other bits on the source path used by -check.
+# Its systemd unit uses LoadCredential, so the daemon runs unprivileged while
+# systemd securely opens the 0400 root-only source.
+chown root:root "$file"
+chmod 0400 "$file"
+echo "[ok] WEB relay profiles are root-only (0400), as upstream requires."
 
 # Apply desired panel configuration from the installed state and ensure
 # per-secret MTProxy units are running. This will not regenerate secrets.
