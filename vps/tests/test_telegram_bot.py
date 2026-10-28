@@ -101,8 +101,10 @@ class TelegramBotTests(unittest.TestCase):
 
     def test_publish_to_channel_and_mark_prevent_repeat_auto_post(self):
         self.configured(auto=True)
+        cdn_flag = pathlib.Path(self.temp.name) / "cdn-only"
+        cdn_flag.touch()
         with patch.object(bot, "load_state", return_value=copy.deepcopy(STATE)), patch.object(
-                bot.CDN_FLAG, "is_file", return_value=True), patch.object(
+                bot, "CDN_FLAG", cdn_flag), patch.object(
                 bot, "telegram_api", return_value={"message_id": 77}) as api:
             self.assertEqual(bot.publish("main"), 77)
             self.assertIn("main", settings.get_config()["posted"])
