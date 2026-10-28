@@ -201,6 +201,7 @@ def update_profile(profile_id):
     def change(state):
         p = get_profile(state, profile_id)
         p["label"] = request.form.get("label", "").strip()
+        p["secret"] = request.form.get("secret", "").strip().lower()
         p["channel"] = request.form.get("channel", "").strip()
         p["ad_tag"] = request.form.get("ad_tag", "").strip().lower()
         p["carrier"] = request.form.get("carrier", "").strip()
@@ -319,10 +320,10 @@ DASHBOARD_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset
 <div class="sub">شناسه {{p.id}} · پورت MTProto {{10443+p.slot}}</div>
 <div><label>لینک اتصال WEB</label><code>{{links[p.id]}}</code></div>
 <div><label>لینک اتصال MTProto استاندارد</label><code>{{direct_links[p.id]}}</code></div>
-<div><label>Secret (محرمانه)</label><code>{{p.secret}}</code></div>
 <form action="{{url_for('update_profile',profile_id=p.id)}}" method="post" class="profile">
 <input type="hidden" name="_csrf" value="{{csrf}}">
 <div><label>عنوان پروکسی</label><input required maxlength="80" name="label" value="{{p.label}}"></div>
+<div><label>Secret (32-hex؛ تغییر آن لینک‌های قبلی را غیرفعال می‌کند)</label><input required maxlength="32" minlength="32" pattern="[0-9a-fA-F]{32}" name="secret" value="{{p.secret}}" autocomplete="off"></div>
 <div><label>کانال اسپانسر (برای مدیریت داخلی)</label><input name="channel" placeholder="@mychannel" value="{{p.channel}}"></div>
 <div><label>Ad Tag دریافتی از @MTProxyBot</label><input name="ad_tag" maxlength="32" pattern="[0-9a-fA-F]{32}" placeholder="32 hex chars" value="{{p.ad_tag}}"></div>
 <div><label>حالت انتقال WEB</label><select name="carrier">{% for m in carriers %}<option value="{{m}}" {{'selected' if p.carrier==m else ''}}>{{m}}</option>{% endfor %}</select></div>
