@@ -39,19 +39,30 @@ class ProtocolTests(unittest.TestCase):
         self.assertFalse(control.authorize_peer(124, 123))
 
     def test_only_explicit_systemd_action(self):
-        with patch.object(control, "reconcile") as reconcile, \
-             patch.object(control.subprocess, "run") as run:
-            control.run_action("apply")
-            reconcile.assert_called_once_with()
+        with patch.object(control.subprocess, "run") as run:
+            control.run_action("ping")
             run.assert_not_called()
+            control.run_action("apply")
+            self.assertEqual(run.call_args.args[0], [
+                "/usr/bin/systemctl", "start", "blue-mtproxy-apply.service"
+            ])
+            self.assertTrue(run.call_args.kwargs["check"])
             control.run_action("update")
-            cmd = run.call_args.args[0]
-            self.assertEqual(cmd, [
+            self.assertEqual(run.call_args.args[0], [
                 "/usr/bin/systemctl", "start", "--no-block",
                 "blue-mtproxy-update-force.service"
             ])
         with self.assertRaises(ValueError):
             control.run_action("arbitrary")
+
+    def test_broker_does_not_run_reconciler_directly(self):
+        source = (ROOT / "manager" / "control.py").read_text(encoding="utf-8")
+        self.assertNotIn("reconcile()", source)
+        self.assertIn('blue-mtproxy-apply.service', source)
+        installer = (ROOT / "install-control.sh").read_text(encoding="utf-8")
+        self.assertIn("Type=oneshot", installer)
+        self.assertIn("ExecStart=/usr/local/sbin/blue-mtproxy-apply", installer)
+        self.assertIn('dispatch("apply", timeout=118)', installer)
 
     def test_socket_peer_and_response(self):
         c, s = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
