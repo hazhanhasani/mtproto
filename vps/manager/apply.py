@@ -119,7 +119,14 @@ def reconcile():
         changed = set()
         for p in active:
             runtime_path = ETC / (p["id"] + ".json")
-            runtime = dump({key: p[key] for key in ("id", "slot", "secret", "ad_tag")})
+            # Each inbound remains one independent MTProxy process with one
+            # sponsor Ad Tag. Enabled nested clients have their own -S secret.
+            # A change to client status/secret restarts only this inbound.
+            runtime = dump({
+                **{key: p[key] for key in ("id", "slot", "secret", "ad_tag")},
+                "clients": [{"secret": c["secret"], "enabled": c["enabled"]}
+                            for c in p.get("clients", [])],
+            })
             if not runtime_path.exists() or runtime_path.read_bytes() != runtime:
                 atomic(runtime_path, runtime, 0o640, runtime_group)
                 changed.add(p["id"])
