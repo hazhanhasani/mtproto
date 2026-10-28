@@ -63,7 +63,7 @@ class UserSecretTests(unittest.TestCase):
             "secret": "c" * 32, "ad_tag": "", "channel": "",
             "carrier": "websocket", "enabled": True,
         })
-        with self.assertRaisesRegex(ValueError, "32"):
+        with self.assertRaisesRegex(ValueError, "۳۲"):
             validate(state)
 
     def test_duplicate_client_secret_rejected(self):
