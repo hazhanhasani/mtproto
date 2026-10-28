@@ -16,7 +16,10 @@ import struct
 import subprocess
 import sys
 
-from apply import reconcile
+try:
+    from .apply import reconcile
+except ImportError:  # direct systemd entrypoint
+    from apply import reconcile
 
 SOCKET_PATH = Path("/run/blue-mtproxy-control/command.sock")
 MAX_REQUEST = 256
