@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import socket
 import sys
+import tempfile
 import unittest
 from unittest.mock import call, patch
 
@@ -79,14 +80,33 @@ class ClientTests(unittest.TestCase):
             dispatch("systemctl reboot")
 
     def test_valid_request_and_response_without_sudo(self):
-        one, two = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
-        with patch("manager.control_client.socket.socket", return_value=one):
-            # Preload the response in the other end, then read the sent request.
-            two.sendall(b'{"ok":true}\n')
-            dispatch("apply", timeout=2)
-            self.assertEqual(json.loads(two.recv(512))["action"], "apply")
-        two.close()
+        class FakeSocket:
+            sent = b""
+            connected = None
 
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def settimeout(self, timeout):
+                pass
+
+            def connect(self, path):
+                self.connected = path
+
+            def sendall(self, data):
+                self.sent = data
+
+            def recv(self, max_bytes):
+                return b'{"ok":true}\\n'.replace(b"\\\\n", b"\\n")
+
+        fake = FakeSocket()
+        with patch("manager.control_client.socket.socket", return_value=fake):
+            dispatch("apply", timeout=2)
+        self.assertEqual(json.loads(fake.sent), {"version": 1, "action": "apply"})
+        self.assertTrue(fake.connected.endswith("command.sock"))
 
 class PanelOperationsTests(unittest.TestCase):
     @classmethod
@@ -101,13 +121,13 @@ class PanelOperationsTests(unittest.TestCase):
     def test_mutate_applies_via_broker_not_sudo(self):
         app = self.app_module
         initial = {"version": 1, "profiles": []}
-        with patch.object(app, "load_state", return_value=initial), \
+        with tempfile.TemporaryDirectory() as d, \
+             patch.object(app, "LOCK", Path(d, "ui.lock")), \
+             patch.object(app, "load_state", return_value=initial), \
              patch.object(app, "validate"), \
              patch.object(app, "write_state") as write, \
              patch.object(app, "dispatch") as command, \
-             patch.object(app.subprocess, "run", side_effect=AssertionError("sudo forbidden")), \
-             patch.object(app.LOCK, "touch"), \
-             patch.object(app.LOCK, "open", create=True):
+             patch.object(app.subprocess, "run", side_effect=AssertionError("sudo forbidden")):
             app.apply_mutation(lambda state: state["profiles"].append({"id": "sample"}))
         command.assert_called_once_with("apply")
         self.assertEqual(write.call_args.args[0]["profiles"][0]["id"], "sample")
@@ -115,12 +135,12 @@ class PanelOperationsTests(unittest.TestCase):
     def test_mutation_rollback_on_broker_failure(self):
         app = self.app_module
         original = {"version": 1, "profiles": []}
-        with patch.object(app, "load_state", return_value=original), \
+        with tempfile.TemporaryDirectory() as d, \
+             patch.object(app, "LOCK", Path(d, "ui.lock")), \
+             patch.object(app, "load_state", return_value=original), \
              patch.object(app, "validate"), \
              patch.object(app, "write_state") as write, \
-             patch.object(app, "dispatch", side_effect=[RuntimeError("apply failed"), None]) as command, \
-             patch.object(app.LOCK, "touch"), \
-             patch.object(app.LOCK, "open", create=True):
+             patch.object(app, "dispatch", side_effect=[RuntimeError("apply failed"), None]) as command:
             with self.assertRaises(RuntimeError):
                 app.apply_mutation(lambda st: st["profiles"].append({"id": "sample"}))
         self.assertEqual(command.call_count, 2)
