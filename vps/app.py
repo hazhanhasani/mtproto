@@ -356,8 +356,9 @@ DASHBOARD_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset
 <article class="card profile">
 <div class="header"><strong>{{p.label}}</strong><span class="pill {{'ok' if services[p.id]=='active' else ''}}">{{services[p.id] or 'unknown'}}</span></div>
 <div class="sub">شناسه {{p.id}} · پورت MTProto {{10443+p.slot}}</div>
-<div><label>لینک اتصال WEB</label><code>{{links[p.id]}}</code></div>
-<div><label>لینک اتصال MTProto استاندارد</label><code>{{direct_links[p.id]}}</code></div>
+<div><label>لینک اصلی MTProto (مناسب کلاینت‌های استاندارد تلگرام)</label><code>{{direct_links[p.id]}}</code></div>
+<div><label>لینک WEB آزمایشی (تنها برای کلاینت دارای WEB Adapter)</label><code>{{links[p.id]}}</code></div>
+<div class="sub">WEB بدون پشتیبانی ویژه در کلاینت ممکن است «غیر قابل دسترس» نشان داده شود؛ سلامت SSL کافی نیست.</div>
 <form action="{{url_for('update_profile',profile_id=p.id)}}" method="post" class="profile">
 <input type="hidden" name="_csrf" value="{{csrf}}">
 <div><label>عنوان پروکسی</label><input required maxlength="80" name="label" value="{{p.label}}"></div>
