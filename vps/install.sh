@@ -27,7 +27,13 @@ if [[ -z "$DOMAIN" ]]; then
   read -r -p "Proxy hostname (e.g. proxy.example.com): " DOMAIN < /dev/tty
 fi
 if [[ -z "$PANEL" ]]; then
-  DEFAULT_PANEL="panel.${DOMAIN#*.}"
+  # Keep the registered domain intact for two-label hosts (example.com).
+  # For normal subdomains, suggest panel on the same parent zone.
+  if [[ "$DOMAIN" == *.*.* ]]; then
+    DEFAULT_PANEL="panel.${DOMAIN#*.}"
+  else
+    DEFAULT_PANEL="panel.${DOMAIN}"
+  fi
   read -r -p "Admin panel hostname [$DEFAULT_PANEL]: " PANEL < /dev/tty
   PANEL="${PANEL:-$DEFAULT_PANEL}"
 fi
