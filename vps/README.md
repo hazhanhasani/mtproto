@@ -48,6 +48,39 @@ The installer prints the panel URL, generated username/password, connection link
 
 **Important limitation:** The installer cannot change your hosting provider's external firewall or Cloudflare DNS records without your account credentials. Those prerequisites must be configured once in their dashboards. If ACME certificate validation fails, the installer exits without claiming success, provides diagnostic commands and retains credentials for recovery.
 
+## Recovery from Telegram 404 during initial install
+
+If compilation finishes with `make: Leaving directory .../MTProxy` and the next line says
+`curl: (22) ... 404`, the failure is in the upstream download of public
+`getProxySecret` or `getProxyConfig` — **not** the compiler and not Caddy SSL.
+
+The installer now checks Telegram's official endpoints first, then uses
+`.telegram-cache/proxy-secret` and `.telegram-cache/proxy-multi.conf`
+from this repository if needed. A dedicated [GitHub Actions workflow](https://github.com/hazhanhasani/mtproto/actions/workflows/telegram-config-cache.yml)
+downloads the official data in GitHub's network, validates exact secret length
+and expected config fields, and refreshes the public mirror daily.
+
+On a fresh VPS where the initial run stopped exactly at this 404, simply run
+the **same one-line command again**. The bootstrap validates that the previous
+installation has not yet configured Caddy or the relay, pulls the updated code
+and reuses the compiled MTProxy binary.
+
+If a later stage already wrote `/etc/caddy/Caddyfile` or
+`/etc/tproxy-server/config.json`, the bootstrap refuses automatic recovery;
+inspect `sudo systemctl status caddy tproxy-server` and preserve existing
+files. Do not delete the VPS or reinstall blindly.
+
+The HTTP response code of each official download can be diagnosed without
+printing file contents:
+
+```bash
+for path in getProxySecret getProxyConfig; do
+  printf '%s: ' "$path"
+  curl -sSL --connect-timeout 10 --max-time 15 -o /dev/null \
+    -w '%{http_code}\n' "https://core.telegram.org/$path"
+done
+```
+
 ## Managing sponsors
 
 Each profile has an independent 16-byte secret, public TCP MTProto port (10443 + slot), backend process, optional channel reference, official 32-hex `Ad Tag`, WEB carrier and enable toggle. The channel reference is internal metadata; a promoted channel **must** be configured with Telegram using [@MTProxyBot](https://t.me/MTProxyBot).
