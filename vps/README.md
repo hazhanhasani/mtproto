@@ -17,6 +17,84 @@ Admin -> HTTPS panel -> Caddy -> isolated Flask (NoNewPrivileges=yes) -> group-o
 - Open TCP 80, 443 and **10443-10474** in the provider firewall; if UFW is active, allow ports used by enabled profiles. Preserve SSH access.
 - Do **not** enable Cloudflare orange-cloud CDN on these proxy domains. It does not forward arbitrary MTProto TCP connections and the initial official WEB relay rollout is intended for direct-to-VPS connections.
 
+## Cloudflare CDN-only WEB mode (recommended when only CDN ports are allowed)
+
+**Public path:** WEB-capable Telegram client → Cloudflare **Proxied** (orange-cloud)
+DNS over HTTPS/WebSocket **TCP 443** → Caddy → localhost WEB relay →
+local official MTProxy backend (TCP 10443 + slot) → Telegram.
+
+**The MTProxy backend port does not need to be a Cloudflare-supported
+port**, because it is a local connection on the VPS. It MUST NOT be
+exposed to the internet in CDN-only mode. Changing a standard MTProto
+link to TCP 443 does not make it pass through Cloudflare's HTTP proxy.
+Regular Telegram MTProto clients are not compatible with this WEB/CDN
+transport; the upstream WEB reference is experimental and needs a
+specially WEB-capable client.
+
+On the existing VPS, first verify Caddy and the WEB relay are working.
+Then run this command, which installs a **persistent nftables drop rule
+for public TCP 10443–10474** while allowing loopback (the relay backend),
+leaving TCP 443/80 and SSH untouched:
+
+```bash
+sudo git -C /opt/blue-mtproxy pull --ff-only origin main && sudo bash /opt/blue-mtproxy/vps/cdn-only.sh enable
+```
+
+This does **not** modify the Cloudflare account or its DNS and does not
+reissue TLS certificates, replace secrets, or change sponsor Ad Tags.
+It verifies the existing trusted origin SSL certificates, creates an
+isolated nftables table, and persists it through systemd (including
+nftables/tproxy-firewall restarts). The panel then hides the public
+direct MTProto link and labels the WEB transport accurately.
+
+In your Cloudflare dashboard (outside the VPS):
+
+1. DNS → `md.blluepanel.ir` (or your actual configured WEB hostname):
+   turn **Proxy status → Proxied (orange cloud)**. Ensure the A record
+   targets the existing origin VPS and avoid an unconfigured AAAA record.
+2. SSL/TLS → set **Full (strict)**. Caddy already holds a CA-valid origin
+   certificate; do not select Flexible TLS.
+3. Network → **WebSockets: On**. WAF/challenge rules must not interrupt
+   the proxy carrier and authenticated bridge, but do not disable all WAF.
+4. Verify HTTPS through Cloudflare from a client network and test a
+   compatible Telegram WEB client. Ordinary Telegram clients may still
+   show WEB as unavailable regardless of server health.
+
+The origin still accepts HTTPS connections on 443 directly if its IP is
+known. Strict origin access limited exclusively to Cloudflare source IPs
+would need an additional, separately audited allow-list (with SSH,
+certificate issuance, trusted probe and ingress behavior accounted for).
+The CDN-only rule here specifically prevents **public MTProxy TCP
+bypass**, not every direct origin HTTPS request.
+
+For verification:
+
+```bash
+sudo bash /opt/blue-mtproxy/vps/cdn-only.sh status
+sudo nft list table inet blue_proxy_cdn_only
+sudo systemctl start blue-mtproxy-debug.service
+```
+
+To deliberately restore direct standard MTProto access, run
+`sudo bash /opt/blue-mtproxy/vps/cdn-only.sh disable` and change
+the DNS-only/direct routing and provider firewall settings as needed.
+Disabling exposes direct ports if upstream or provider firewall permits;
+it is **not** a Telegram WEB compatibility fix.
+
+**Cloudflare port facts:** Ordinary Cloudflare HTTP proxy supports
+HTTPS 443, 2053, 2083, 2087, 2096 and 8443. We use only 443 to avoid
+nonstandard ports and client/WebView incompatibility. Unsupported raw
+TCP requires a separate product such as Cloudflare Spectrum (plan and
+policy limitations apply).
+
+References:
+
+- https://developers.cloudflare.com/fundamentals/reference/network-ports/
+- https://developers.cloudflare.com/network/websockets/
+- https://developers.cloudflare.com/dns/proxy-status/use-cases/
+- https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/
+- https://github.com/telegramdesktop/tproxy-server
+
 ## One-command installation (including automatic SSL)
 
 First create two **DNS-only** A records for your VPS public IPv4, e.g.:
