@@ -33,6 +33,32 @@ chgrp -R -- "$group" "$root/vps"
 chmod -R g+rX "$root/vps"
 chmod -R go-w "$root/vps"
 
+# The MTProxy service is User=mtproxy, not User=bluepanel. It executes
+# exactly one root-owned Python source file (manager/runner.py), which uses
+# stdlib only and contains no secrets. The panel's restricted group-readable
+# tree is otherwise inaccessible to mtproxy after git reset with umask 077.
+# Permit *traverse only* on the three parent directories and *read only*
+# on the non-sensitive launcher; do NOT add mtproxy to the bluepanel group,
+# because that group is allowed to read private panel.env.
+[[ -f "$root/vps/manager/runner.py" && ! -L "$root/vps/manager/runner.py" ]] || {
+  echo "MTProxy launcher missing or unsafe." >&2; exit 1;
+}
+id mtproxy >/dev/null 2>&1 || {
+  echo "mtproxy service user is missing." >&2; exit 1;
+}
+chmod o+x -- "$root" "$root/vps" "$root/vps/manager"
+chmod o+r -- "$root/vps/manager/runner.py"
+# Check actual source import under service UID, without executing main()
+# or opening any user/Secret runtime configuration files.
+if ! runuser -u mtproxy -- /usr/bin/python3 -B -c '
+import runpy
+runpy.run_path("/opt/blue-mtproxy/vps/manager/runner.py", run_name="permission_probe")
+'; then
+  echo "mtproxy cannot read/import the launcher. Backend restart unsafe." >&2
+  exit 1
+fi
+echo "[ok] Restricted MTProxy launcher is readable by mtproxy."
+
 # Preserve root ownership of Python packages while granting the same panel
 # group read/execute access to the virtual environment.
 chgrp -R -- "$group" "$venv"
