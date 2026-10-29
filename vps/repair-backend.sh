@@ -23,6 +23,33 @@ id bluepanel >/dev/null 2>&1 || { echo "[error] bluepanel user is missing." >&2;
   exit 1
 }
 
+# A verified Git checkout may be 0700/0600 under the updater's umask,
+# and panel-permissions.sh assigns code to group bluepanel. MTProxy is
+# deliberately NOT a bluepanel group member (panel.env is private).
+# Repair only launcher traversal/read access before restarting a backend.
+CODE=/opt/blue-mtproxy
+LAUNCHER="$CODE/vps/manager/runner.py"
+[[ -d "$CODE" && ! -L "$CODE" && -d "$CODE/vps" && ! -L "$CODE/vps" && \
+   -d "$CODE/vps/manager" && ! -L "$CODE/vps/manager" && \
+   -f "$LAUNCHER" && ! -L "$LAUNCHER" ]] || {
+  echo "[error] Expected MTProxy launcher source path is missing or unsafe." >&2
+  exit 1
+}
+[[ "$(stat -c '%U' "$LAUNCHER")" == "root" ]] || {
+  echo "[error] MTProxy launcher must be root-owned." >&2
+  exit 1
+}
+chmod o+x "$CODE" "$CODE/vps" "$CODE/vps/manager"
+chmod o+r "$LAUNCHER"
+if ! runuser -u mtproxy -- /usr/bin/python3 -B -c '
+import runpy
+runpy.run_path("/opt/blue-mtproxy/vps/manager/runner.py", run_name="permission_probe")
+'; then
+  echo "[error] MTProxy cannot read the Python launcher. No secrets changed." >&2
+  exit 1
+fi
+echo "[ok] mtproxy can import the root-owned launcher."
+
 # The original installer made ROOT 0750 root:bluepanel, so mtproxy cannot
 # open ROOT/runtime/main.json, despite runtime itself being root:mtproxy 0750.
 # 0711 allows traversal by mtproxy but never directory listing.
