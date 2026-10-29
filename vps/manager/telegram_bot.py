@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from app import CDN_FLAG, apply_mutation, get_profile, load_state
 from manager.bot_config import get_config, ready, update_config
+from manager.channel_pool import pool_clients
 from manager.model import direct_url, new_secret, web_url
 
 LOG = logging.getLogger("blue-mtproxy-bot")
@@ -93,6 +94,15 @@ def publish(profile_id, *, token=None, channel=None, client_id=None):
     # never the inbound/owner secret. Re-check membership and enabled state
     # against live state immediately before Telegram delivery.
     selected = profile
+    if client_id is None and profile_id in config["scheduled_inbounds"]:
+        # Manual channel posts must also avoid leaking the owner Secret
+        # once this inbound is configured to use the dedicated pool.
+        candidates = [c for c in pool_clients(profile) if c["enabled"]]
+        if not candidates:
+            raise ValueError("کاربر فعالی در مجموعه اختصاصی کانال وجود ندارد")
+        previous = config["schedule_last_clients"].get(profile_id)
+        alternatives = [c for c in candidates if c["id"] != previous]
+        client_id = secrets.choice(alternatives or candidates)["id"]
     if client_id is not None:
         client = next(
             (c for c in profile.get("clients", []) if c["id"] == client_id),
