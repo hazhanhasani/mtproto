@@ -11,6 +11,25 @@ import apply
 
 
 class AccessTests(unittest.TestCase):
+    def test_backend_listener_accepts_real_tcp_success(self):
+        with patch.object(apply.socket, "create_connection") as dial:
+            apply.wait_for_backend(10444, timeout=0)
+            dial.assert_called_once_with(("127.0.0.1", 10444), timeout=0.6)
+
+    def test_backend_listener_fails_when_unit_active_but_socket_closed(self):
+        with patch.object(apply.socket, "create_connection", side_effect=ConnectionRefusedError):
+            with self.assertRaisesRegex(RuntimeError, "10444"):
+                apply.wait_for_backend(10444, timeout=0)
+
+    def test_backend_listener_rejects_unexpected_ports(self):
+        with self.assertRaises(ValueError):
+            apply.wait_for_backend(443, timeout=0)
+
+    def test_reconciler_checks_listener_for_every_enabled_inbound(self):
+        source = pathlib.Path(apply.__file__).read_text(encoding="utf-8")
+        self.assertIn("wait_for_backend(10443 + slot)", source)
+        self.assertIn('run("systemctl", "restart", UNIT.format(profile_id))', source)
+
     def test_accepts_root_owned_group_readable_regular_file(self):
         st = SimpleNamespace(st_mode=stat.S_IFREG | 0o640, st_uid=0, st_gid=4321)
         with patch.object(apply.os, "lstat", return_value=st), \
