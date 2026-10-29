@@ -486,6 +486,8 @@ def schedule_channel_posts(profile_id):
         # Provision all ten real credentials before enabling the timer.
         # A failed capacity check leaves the schedule disabled and does
         # not modify the existing inbound owner Secret.
+        if enabled and not bot_ready(get_bot_config()):
+            raise ValueError("ابتدا توکن ربات و کانال را تنظیم کنید")
         if enabled and len(pool_clients(selected)) < POOL_SIZE:
             apply_mutation(lambda state: provision_pool(state, profile_id))
         schedule_inbound(profile_id, enabled)
