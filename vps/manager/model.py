@@ -81,6 +81,8 @@ def validate(state):
                 raise ValueError("duplicate or invalid client secret")
             if type(c.get("enabled")) is not bool:
                 raise ValueError("invalid client enabled")
+            if "channel_pool" in c and type(c["channel_pool"]) is not bool:
+                raise ValueError("invalid channel pool flag")
             seen_secrets.add(token)
             if p["enabled"] and c["enabled"]:
                 active_secrets += 1
