@@ -15,6 +15,7 @@ from flask import Flask, abort, flash, redirect, render_template, render_templat
 from werkzeug.security import check_password_hash
 
 from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
+from manager.channel_pool import POOL_SIZE, pool_clients, provision_pool
 from manager.control_client import dispatch
 from manager.bot_config import (
     configure as configure_bot,
@@ -255,7 +256,7 @@ def render_manager(section="overview", selected_id=None):
             "token_set": False, "ready": False, "scheduled_inbounds": [],
         }
     return render_template(
-        "manager.html", bot=bot_view, bot_settings_error=bot_settings_error, ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
+        "manager.html", pool_counts={p["id"]: len(pool_clients(p)) for p in state["profiles"]}, bot=bot_view, bot_settings_error=bot_settings_error, ui_version=PANEL_UI_VERSION, state=state, services=services, telemetry=telemetry,
         section=section, selected=selected, users=user_records,
         total_users=len(user_records), total_connections=(sum(total_connections)
         if total_connections and len(total_connections) ==
@@ -482,13 +483,18 @@ def schedule_channel_posts(profile_id):
         enabled = request.form.get("enabled") == "1"
         if enabled and not selected["enabled"]:
             raise ValueError("اینباند غیرفعال قابل زمان‌بندی نیست")
+        # Provision all ten real credentials before enabling the timer.
+        # A failed capacity check leaves the schedule disabled and does
+        # not modify the existing inbound owner Secret.
+        if enabled and len(pool_clients(selected)) < POOL_SIZE:
+            apply_mutation(lambda state: provision_pool(state, profile_id))
         schedule_inbound(profile_id, enabled)
         flash(
-            "ارسال هر ۳۰ دقیقه برای این اینباند فعال شد" if enabled
+            "۱۰ کاربر اختصاصی آماده‌اند؛ هر ۳۰ دقیقه یکی تصادفی منتشر می‌شود" if enabled
             else "ارسال زمان‌بندی‌شده این اینباند متوقف شد",
             "success",
         )
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         flash(str(exc), "error")
     return redirect(url_for("bot_page"))
 
