@@ -81,7 +81,7 @@ def post_payload(state, profile, cdn_only):
     }
 
 
-def publish(profile_id, *, token=None, channel=None):
+def publish(profile_id, *, token=None, channel=None, client_id=None):
     config = get_config()
     if not ready(config):
         raise ValueError("تنظیمات ربات، مدیر یا کانال ناقص است")
@@ -89,8 +89,20 @@ def publish(profile_id, *, token=None, channel=None):
     profile = get_profile(state, profile_id)
     if not profile["enabled"]:
         raise ValueError("اینباند غیرفعال را نمی‌توان منتشر کرد")
+    # Scheduled posts must contain a dedicated channel user's credential,
+    # never the inbound/owner secret. Re-check membership and enabled state
+    # against live state immediately before Telegram delivery.
+    selected = profile
+    if client_id is not None:
+        client = next(
+            (c for c in profile.get("clients", []) if c["id"] == client_id),
+            None,
+        )
+        if not client or not client.get("channel_pool") or not client["enabled"]:
+            raise ValueError("کاربر اختصاصی کانال یافت نشد یا غیرفعال است")
+        selected = {**profile, "secret": client["secret"]}
     destination = channel or config["channel_id"]
-    params = post_payload(state, profile, CDN_FLAG.is_file())
+    params = post_payload(state, selected, CDN_FLAG.is_file())
     response = telegram_api(token or config["token"], "sendMessage", {
         "chat_id": destination, **params,
         "disable_web_page_preview": True,
