@@ -14,11 +14,29 @@ os.environ.setdefault("PANEL_ADMIN_PASSWORD_HASH", "test-not-used")
 from manager import bot_config as settings
 from manager import telegram_bot as bot
 from manager import cron_publish
+from manager.channel_pool import POOL_SIZE, pool_clients, provision_pool
+from manager.model import relay_profiles, validate
 
 TOKEN = "123456789:" + "A" * 35
 PROFILE = {"id": "main", "slot": 0, "label": "Main & Fast",
            "secret": "a" * 32, "enabled": True}
 STATE = {"hostname": "proxy.example.com", "profiles": [PROFILE]}
+POOL = [
+    {"id": "u" + format(i + 1, "08x"), "label": f"Channel Proxy {i+1:02d}",
+     "secret": format(i + 1, "032x"), "enabled": True, "channel_pool": True}
+    for i in range(10)
+]
+POOL_STATE = {"hostname": "proxy.example.com",
+              "profiles": [{**PROFILE, "clients": POOL}]}
+
+
+def validated_state():
+    return {
+        "version": 1, "hostname": "proxy.example.com",
+        "panel_hostname": "panel.example.com", "auto_update": True,
+        "profiles": [{**PROFILE, "ad_tag": "", "channel": "",
+                      "carrier": "websocket"}],
+    }
 
 
 class TelegramBotTests(unittest.TestCase):
@@ -51,6 +69,7 @@ class TelegramBotTests(unittest.TestCase):
         migrated = settings.get_config()
         self.assertEqual(migrated["scheduled_inbounds"], [])
         self.assertEqual(migrated["schedule_sent_slots"], {})
+        self.assertEqual(migrated["schedule_last_clients"], {})
         self.assertEqual(migrated["offset"], 12)
 
     def test_schedule_toggle_requires_configured_bot_and_valid_id(self):
@@ -67,7 +86,7 @@ class TelegramBotTests(unittest.TestCase):
     def test_half_hour_cron_dedupe_and_next_slot(self):
         self.configured()
         settings.schedule_inbound("main", True)
-        with patch.object(cron_publish, "load_state", return_value=STATE), patch.object(
+        with patch.object(cron_publish, "load_state", return_value=POOL_STATE), patch.object(
                 cron_publish, "publish", return_value=55) as publish:
             self.assertEqual(cron_publish.publish_due(now=3600), 1)
             self.assertEqual(settings.get_config()["schedule_sent_slots"], {"main": 2})
@@ -75,6 +94,10 @@ class TelegramBotTests(unittest.TestCase):
             self.assertEqual(cron_publish.publish_due(now=5400), 1)
         self.assertEqual(publish.call_count, 2)
         self.assertEqual(settings.get_config()["schedule_sent_slots"], {"main": 3})
+        chosen = [call.kwargs["client_id"] for call in publish.call_args_list]
+        self.assertEqual(len(set(chosen)), 2, "Do not repeat immediately")
+        self.assertNotIn(PROFILE["secret"], [c["secret"] for c in POOL])
+        self.assertEqual(settings.get_config()["schedule_last_clients"]["main"], chosen[-1])
 
     def test_half_hour_cron_skips_disabled_and_removed_inbounds(self):
         self.configured()
@@ -94,7 +117,7 @@ class TelegramBotTests(unittest.TestCase):
     def test_half_hour_cron_failure_does_not_mark_delivered(self):
         self.configured()
         settings.schedule_inbound("main", True)
-        with patch.object(cron_publish, "load_state", return_value=STATE), patch.object(
+        with patch.object(cron_publish, "load_state", return_value=POOL_STATE), patch.object(
                 cron_publish, "publish", side_effect=bot.TelegramError("network fail")):
             with self.assertRaises(RuntimeError):
                 cron_publish.publish_due(now=3600)
@@ -107,8 +130,10 @@ class TelegramBotTests(unittest.TestCase):
         settings.configure("", "123", "@newchannel", False, ["main"])
         self.assertEqual(settings.get_config()["schedule_sent_slots"], {})
         self.assertEqual(settings.get_config()["scheduled_inbounds"], ["main"])
+        self.assertEqual(settings.get_config()["schedule_last_clients"], {})
 
     def test_panel_schedule_control_requires_csrf_and_active_inbound(self):
+        self.configured()
         import app as admin
         admin.app.config.update(TESTING=True)
         client = admin.app.test_client()
@@ -117,6 +142,7 @@ class TelegramBotTests(unittest.TestCase):
             session["authenticated"] = True
             session["csrf"] = "safe-csrf-value"
         with patch.object(admin, "load_state", return_value=STATE), patch.object(
+                admin, "apply_mutation") as mutate, patch.object(
                 admin, "schedule_inbound") as schedule:
             failed = client.post("/bot/schedule/main", base_url=url, data={
                 "_csrf": "wrong", "enabled": "1"})
@@ -125,6 +151,10 @@ class TelegramBotTests(unittest.TestCase):
                 "_csrf": "safe-csrf-value", "enabled": "1"})
             self.assertEqual(enabled.status_code, 302)
             schedule.assert_called_once_with("main", True)
+            mutate.assert_called_once()
+            snapshot = validated_state()
+            mutate.call_args.args[0](snapshot)
+            self.assertEqual(len(pool_clients(snapshot["profiles"][0])), 10)
 
         with patch.object(admin, "load_state", return_value={"profiles": [
                 {**PROFILE, "enabled": False}]}), patch.object(
@@ -132,6 +162,132 @@ class TelegramBotTests(unittest.TestCase):
             client.post("/bot/schedule/main", base_url=url, data={
                 "_csrf": "safe-csrf-value", "enabled": "1"})
             schedule.assert_not_called()
+
+    def test_ten_distinct_real_users_are_created_idempotently(self):
+        state = validated_state()
+        self.assertEqual(provision_pool(state, "main"), POOL_SIZE)
+        validate(state)
+        users = pool_clients(state["profiles"][0])
+        self.assertEqual(len(users), POOL_SIZE)
+        self.assertEqual(len({u["secret"] for u in users}), POOL_SIZE)
+        self.assertNotIn(PROFILE["secret"], [u["secret"] for u in users])
+        self.assertEqual(len(relay_profiles(state)["profiles"]), 11)
+        original = copy.deepcopy(state)
+        self.assertEqual(provision_pool(state, "main"), 0)
+        self.assertEqual(state, original)
+
+    def test_pool_keeps_manual_clients_and_repairs_deleted_member(self):
+        state = validated_state()
+        profile = state["profiles"][0]
+        manual = {"id": "u99999999", "label": "Paying Customer",
+                  "secret": "b" * 32, "enabled": True}
+        profile["clients"] = [manual]
+        self.assertEqual(provision_pool(state, "main"), 10)
+        removed = pool_clients(profile)[3]
+        profile["clients"].remove(removed)
+        self.assertEqual(provision_pool(state, "main"), 1)
+        self.assertEqual(len(pool_clients(profile)), 10)
+        self.assertIn(manual, profile["clients"])
+        validate(state)
+
+    def test_capacity_limit_prevents_partial_creation(self):
+        state = validated_state()
+        profile = state["profiles"][0]
+        profile["clients"] = [
+            {"id": "u" + format(i + 100, "08x"), "label": "Manual",
+             "secret": format(i + 101, "032x"), "enabled": True}
+            for i in range(22)
+        ]
+        snapshot = copy.deepcopy(state)
+        with self.assertRaisesRegex(ValueError, "ظرفیت"):
+            provision_pool(state, "main")
+        self.assertEqual(state, snapshot)
+        validate(state)
+
+    def test_global_web_capacity_is_checked_before_provisioning(self):
+        state = validated_state()
+        state["profiles"][0]["clients"] = [
+            {"id": "u" + format(i + 100, "08x"), "label": "Manual",
+             "secret": format(i + 101, "032x"), "enabled": True}
+            for i in range(21)
+        ]
+        state["profiles"].append({
+            "id": "secondary", "slot": 1, "label": "Second",
+            "secret": "c" * 32, "ad_tag": "", "channel": "",
+            "carrier": "websocket", "enabled": True,
+        })
+        validate(state)
+        snapshot = copy.deepcopy(state)
+        with self.assertRaisesRegex(ValueError, "۳۲"):
+            provision_pool(state, "main")
+        self.assertEqual(state, snapshot)
+
+    def test_select_never_uses_owner_or_disabled_pool_credentials(self):
+        pool = copy.deepcopy(POOL)
+        pool[0]["enabled"] = False
+        profile = {**PROFILE, "clients": pool}
+        for _ in range(20):
+            selected = cron_publish.pick_random_user(profile)
+            self.assertTrue(selected["enabled"])
+            self.assertTrue(selected["channel_pool"])
+            self.assertNotEqual(selected["secret"], PROFILE["secret"])
+        last = pool[1]["id"]
+        for _ in range(20):
+            self.assertNotEqual(cron_publish.pick_random_user(profile, last)["id"], last)
+
+    def test_channel_publish_uses_selected_client_secret(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        cdn_flag = pathlib.Path(self.temp.name) / "cdn-only"
+        cdn_flag.touch()
+        with patch.object(bot, "load_state", return_value=POOL_STATE), patch.object(
+                bot, "CDN_FLAG", cdn_flag), patch.object(
+                bot, "telegram_api", return_value={"message_id": 52}) as api:
+            self.assertEqual(bot.publish("main", client_id=POOL[3]["id"]), 52)
+        payload = api.call_args.args[2]
+        self.assertIn(POOL[3]["secret"], payload["text"])
+        self.assertNotIn(PROFILE["secret"], payload["text"])
+        self.assertIn(POOL[3]["secret"], payload["reply_markup"]
+                      ["inline_keyboard"][0][0]["url"])
+
+    def test_manual_post_for_scheduled_inbound_never_uses_owner_secret(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        with patch.object(bot, "load_state", return_value=POOL_STATE), patch.object(
+                bot, "telegram_api", return_value={"message_id": 78}) as api:
+            bot.publish("main")
+        self.assertNotIn(PROFILE["secret"], api.call_args.args[2]["text"])
+
+    def test_cron_bootstraps_pool_for_existing_schedules(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        state = validated_state()
+        def load():
+            return copy.deepcopy(state)
+        def mutate(callback):
+            callback(state)
+            validate(state)
+        with patch.object(cron_publish, "load_state", side_effect=load), patch.object(
+                cron_publish, "apply_mutation", side_effect=mutate) as apply, patch.object(
+                cron_publish, "publish", return_value=55) as publish:
+            self.assertEqual(cron_publish.publish_due(now=3600), 1)
+            self.assertEqual(cron_publish.publish_due(now=5400), 1)
+        apply.assert_called_once()
+        self.assertEqual(len(pool_clients(state["profiles"][0])), 10)
+        self.assertEqual(publish.call_count, 2)
+        self.assertTrue(all(c.kwargs.get("client_id") for c in publish.call_args_list))
+
+    def test_scheduler_does_not_leak_owner_when_pool_fails(self):
+        self.configured()
+        settings.schedule_inbound("main", True)
+        with patch.object(cron_publish, "load_state", return_value=STATE), patch.object(
+                cron_publish, "apply_mutation", side_effect=ValueError("capacity")) as mutate, patch.object(
+                cron_publish, "publish") as publish:
+            with self.assertRaises(RuntimeError):
+                cron_publish.publish_due(now=3600)
+        mutate.assert_called_once()
+        publish.assert_not_called()
+        self.assertEqual(settings.get_config()["schedule_sent_slots"], {})
 
     def test_cron_installer_has_persistent_half_hour_timer(self):
         installer = (ROOT / "install-bot.sh").read_text(encoding="utf-8")

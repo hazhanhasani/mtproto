@@ -20,6 +20,7 @@ DEFAULT = {
     "token": "", "admin_id": 0, "channel_id": "", "auto_publish": False,
     "posted": [], "offset": 0,
     "scheduled_inbounds": [], "schedule_sent_slots": {},
+    "schedule_last_clients": {},
 }
 
 
@@ -54,6 +55,12 @@ def validate_config(config):
                 type(v) is not int or v < 0 or v >= 2**63 or
                 k not in targets for k, v in sent.items())):
         raise ValueError("invalid schedule history")
+    last = config["schedule_last_clients"]
+    if (not isinstance(last, dict) or len(last) > 32 or
+            any(not isinstance(k, str) or not PROFILE_RE.fullmatch(k) or
+                k not in targets or not isinstance(v, str) or
+                not PROFILE_RE.fullmatch(v) for k, v in last.items())):
+        raise ValueError("invalid last scheduled client")
     return config
 
 
@@ -129,6 +136,7 @@ def configure(token, admin_id, channel_id, auto_publish, profile_ids):
         data["auto_publish"] = auto_publish
         if before_channel != channel:
             data["schedule_sent_slots"] = {}
+            data["schedule_last_clients"] = {}
         if auto_publish and (not before_auto or before_channel != channel):
             data["posted"] = profile_ids[:1024]
     return update_config(change)
@@ -152,9 +160,11 @@ def schedule_inbound(profile_id, enabled):
             if profile_id not in data["scheduled_inbounds"]:
                 data["scheduled_inbounds"].append(profile_id)
             data["schedule_sent_slots"].pop(profile_id, None)
+            data["schedule_last_clients"].pop(profile_id, None)
         else:
             data["scheduled_inbounds"] = [
                 item for item in data["scheduled_inbounds"] if item != profile_id
             ]
             data["schedule_sent_slots"].pop(profile_id, None)
+            data["schedule_last_clients"].pop(profile_id, None)
     return update_config(change)
