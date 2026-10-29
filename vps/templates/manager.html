@@ -107,7 +107,7 @@
         <input type="hidden" name="_csrf" value="{{csrf}}">
         <input type="hidden" name="enabled" value="{{'0' if p.id in bot.scheduled_inbounds else '1'}}">
         <button class="btn compact" type="submit">{{'⏸ توقف انتشار ۳۰ دقیقه‌ای' if p.id in bot.scheduled_inbounds else '◷ انتشار هر ۳۰ دقیقه'}}</button>
-        <span class="hint">{{'فعال' if p.id in bot.scheduled_inbounds else 'غیرفعال'}} · زمان سرور :۰۰ و :۳۰</span>
+        <span class="hint">{{'فعال' if p.id in bot.scheduled_inbounds else 'غیرفعال'}} · {{pool_counts[p.id]}}/۱۰ کاربر اختصاصی · زمان سرور :۰۰ و :۳۰</span>
       </form>
       {% endif %}
       {% if not p.get('clients',[]) %}<div class="empty">هنوز کاربری برای این اینباند تعریف نشده است. از فرم زیر اولین کاربر را بساز.</div>{% endif %}
@@ -210,17 +210,17 @@
           <div class="info-banner">⚠ در حالت Cloudflare CDN-only، لینک WEB آزمایشی برای کلاینت سازگار منتشر می‌شود؛ دکمه Connect استاندارد MTProto در تلگرام معمولی به مسیر مستقیم TCP نیاز دارد.</div>
         </div>
       </section>
-      <div class="panel"><div class="panel-title"><h2>انتشار و زمان‌بندی اینباندها</h2><span class="hint">انتشار دستی یا هر ۳۰ دقیقه در دقیقه‌های ۰۰ و ۳۰</span></div>
+      <div class="panel"><div class="panel-title"><h2>انتشار و زمان‌بندی اینباندها</h2><span class="hint">هر ۳۰ دقیقه یک کاربر تصادفی از میان ۱۰ کاربر اختصاصی</span></div>
         {% if not bot.ready %}<div class="empty">برای فعال‌کردن انتشار، توکن ربات، شناسه مدیر و کانال را تنظیم کن.</div>{% endif %}
         {% for p in state.profiles %}
         <div class="health-line">
           <span><strong>{{p.label}}</strong> <small>#{{p.id}}</small><br>
-          <span class="status {{'up' if p.id in bot.scheduled_inbounds else 'unknown'}}">{{'هر ۳۰ دقیقه فعال' if p.id in bot.scheduled_inbounds else 'زمان‌بندی خاموش'}}</span></span>
+          <span class="status {{'up' if p.id in bot.scheduled_inbounds else 'unknown'}}">{{'هر ۳۰ دقیقه فعال' if p.id in bot.scheduled_inbounds else 'زمان‌بندی خاموش'}}</span> <small>کاربران کانال: {{pool_counts[p.id]}}/۱۰</small></span>
           <div class="row-actions">
             <form method="post" action="{{url_for('schedule_channel_posts',profile_id=p.id)}}">
               <input type="hidden" name="_csrf" value="{{csrf}}">
               <input type="hidden" name="enabled" value="{{'0' if p.id in bot.scheduled_inbounds else '1'}}">
-              <button type="submit" class="btn compact" {{'disabled' if not bot.ready or (not p.enabled and p.id not in bot.scheduled_inbounds) else ''}}>{{'توقف خودکار' if p.id in bot.scheduled_inbounds else 'فعال‌سازی ۳۰ دقیقه‌ای'}}</button>
+              <button type="submit" class="btn compact" {{'disabled' if not bot.ready or (not p.enabled and p.id not in bot.scheduled_inbounds) else ''}}>{{'توقف خودکار' if p.id in bot.scheduled_inbounds else 'ساخت ۱۰ کاربر و فعال‌سازی'}}</button>
             </form>
             <form method="post" action="{{url_for('publish_to_channel',profile_id=p.id)}}">
               <input type="hidden" name="_csrf" value="{{csrf}}">
