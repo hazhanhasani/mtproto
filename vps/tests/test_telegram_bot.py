@@ -199,10 +199,28 @@ class TelegramBotTests(unittest.TestCase):
             for i in range(22)
         ]
         snapshot = copy.deepcopy(state)
-        with self.assertRaisesRegex(ValueError, "۳۲"):
+        with self.assertRaisesRegex(ValueError, "ظرفیت"):
             provision_pool(state, "main")
         self.assertEqual(state, snapshot)
         validate(state)
+
+    def test_global_web_capacity_is_checked_before_provisioning(self):
+        state = validated_state()
+        state["profiles"][0]["clients"] = [
+            {"id": "u" + format(i + 100, "08x"), "label": "Manual",
+             "secret": format(i + 101, "032x"), "enabled": True}
+            for i in range(21)
+        ]
+        state["profiles"].append({
+            "id": "secondary", "slot": 1, "label": "Second",
+            "secret": "c" * 32, "ad_tag": "", "channel": "",
+            "carrier": "websocket", "enabled": True,
+        })
+        validate(state)
+        snapshot = copy.deepcopy(state)
+        with self.assertRaisesRegex(ValueError, "۳۲"):
+            provision_pool(state, "main")
+        self.assertEqual(state, snapshot)
 
     def test_select_never_uses_owner_or_disabled_pool_credentials(self):
         pool = copy.deepcopy(POOL)
