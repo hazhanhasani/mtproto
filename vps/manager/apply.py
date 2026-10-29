@@ -3,7 +3,9 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
+import time
 import stat
 import sys
 import tempfile
@@ -87,6 +89,26 @@ def ensure_private_profiles(path):
         raise PermissionError("WEB relay profiles must be private (0400 root:root)")
 
 
+def wait_for_backend(port, timeout=8.0):
+    """Require a real listener, not merely a systemd active state.
+
+    MTProxy may keep a process alive while no client socket is bound.
+    Propagate failure to the panel so apply_mutation restores the old
+    state instead of committing unreachable client credentials.
+    """
+    if type(port) is not int or not 10443 <= port <= 10474:
+        raise ValueError("invalid backend port")
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.6):
+                return
+        except OSError:
+            if time.monotonic() >= deadline:
+                raise RuntimeError("MTProxy backend TCP listener unavailable on port " + str(port))
+            time.sleep(0.3)
+
+
 def reconcile():
     if os.geteuid() != 0:
         raise PermissionError("apply must run as root")
@@ -165,6 +187,11 @@ def reconcile():
             ).returncode == 0
             if profile_id in changed or not active_now:
                 run("systemctl", "restart", UNIT.format(profile_id))
+            # A successful systemctl restart is not proof of a listening
+            # MTProxy backend. Check every enabled inbound before marking
+            # this apply successful (and before restarting the WEB relay).
+            slot = next(p["slot"] for p in active if p["id"] == profile_id)
+            wait_for_backend(10443 + slot)
         if relay_changed:
             run("systemctl", "restart", "tproxy-server.service")
 
