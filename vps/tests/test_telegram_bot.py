@@ -133,6 +133,7 @@ class TelegramBotTests(unittest.TestCase):
         self.assertEqual(settings.get_config()["schedule_last_clients"], {})
 
     def test_panel_schedule_control_requires_csrf_and_active_inbound(self):
+        self.configured()
         import app as admin
         admin.app.config.update(TESTING=True)
         client = admin.app.test_client()
