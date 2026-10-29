@@ -55,8 +55,13 @@ def publish_due(now=None):
         if current["schedule_sent_slots"].get(profile_id) == slot:
             continue
         try:
-            profile = get_profile(load_state(), profile_id)
-            if not profile["enabled"]:
+            # Removed inbounds are harmless stale schedule entries;
+            # never mark them failed or create any replacement inbound.
+            profile = next(
+                (p for p in load_state()["profiles"] if p["id"] == profile_id),
+                None,
+            )
+            if profile is None or not profile["enabled"]:
                 continue
             profile = ensure_channel_users(profile_id)
             user = pick_random_user(
