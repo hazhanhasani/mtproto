@@ -1,30 +1,47 @@
 # Blue Proxy Manager — VPS Installation
 
-## Half-hour Telegram channel post scheduling
+## Ten-user randomized Telegram channel publishing
 
-The channel bot supports optional scheduled re-posting for individual
-inbounds. Sign in to `/bot` or open the inbound detail page and select
-**فعال‌سازی ۳۰ دقیقه‌ای** for the desired inbound. Each selected enabled
-inbound is sent at minute `00` and `30` of the server's local clock
-(48 channel posts per full day per inbound). Disabling the toggle stops
-scheduled posting for that inbound only; manual publishing still works.
+For each selected inbound, the panel provisions **10 normal, persistent
+users**, each with a unique Secret, through the same validated
+`app.apply_mutation`/root broker used by normal client management.
 
-The systemd `blue-mtproxy-telegram-cron.timer` runs a dedicated
-unprivileged oneshot, independent of bot long-polling, using the existing
-channel and inbound Secret. It records a successful delivery per
-30-minute slot, so re-running the service within that slot won't duplicate
-the post. Missing/disabled inbounds are skipped. Network or Telegram errors
-remain visible in the timer service journal and will be retried on the
-next tick. Existing deployments keep scheduling **off** after upgrade
-until the admin explicitly opts an inbound in.
+Open `/bot` and enable the 30-minute schedule for the desired inbound.
+The systemd timer runs at :00 and :30 of the server clock. Each tick
+publishes **one randomly selected enabled pool user** with its own Secret
+and connect URL, **never the inbound's owner Secret**. The previous user's
+ID is persisted and excluded on the next tick when at least two users
+are active. Manual publishing for a scheduled inbound also chooses from
+the channel pool instead of the owner Secret.
 
-To verify deployment:
+Existing schedules migrate automatically: their first eligible cron run
+creates the ten dedicated users. Enabling the schedule via the dashboard
+creates the users immediately, before the schedule is switched on.
+
+The existing WEB relay supports a maximum of **32 active Secrets across
+all inbounds and users**. The pool requires 10 *additional* active slots
+per scheduled inbound. If capacity is insufficient, provisioning fails
+safely, existing users and credentials remain untouched, and cron does
+not fall back to the owner Secret. The panel lists channel pool counts.
+Deleted pool users are replenished at the next cron execution when
+capacity permits; disabled pool users stay disabled and are skipped.
+Stopping the schedule **does not revoke** already published user Secrets
+or remove their accounts. Disable/delete users explicitly in the normal
+Users page if revocation is desired.
+
+No client Secret is regenerated on every scheduled post. Publishing
+confirmation is persisted per half-hour slot; Telegram/network failures
+do not mark successful delivery. If the process exits after Telegram
+accepts a post but before state is recorded, an occasional duplicate
+post is possible upon a manual same-slot retry.
+
+Verify installation:
 
 ```bash
 sudo systemctl list-timers blue-mtproxy-telegram-cron.timer --no-pager
-sudo systemctl status blue-mtproxy-telegram-cron.timer --no-pager
 sudo journalctl -u blue-mtproxy-telegram-cron.service -n 30 --no-pager
 ```
+
 
 ---
 
