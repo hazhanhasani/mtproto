@@ -42,6 +42,8 @@ sensitive: anyone holding it can retrieve the node's proxy credentials.
 
 The node manages a separate Caddy include file at
 /etc/caddy/blue-mtproxy-domains.caddy and reloads Caddy only after validation.
+Each extra hostname runs a separate upstream WEB relay because bridge credentials
+are hostname-bound; Caddy routes each hostname to its dedicated loopback relay.
 Caddy obtains and renews ACME HTTPS certificates automatically after DNS
 points to the node public IP and TCP 80/443 is reachable.
 
