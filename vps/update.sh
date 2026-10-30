@@ -39,7 +39,7 @@ rollback() {
 }
 trap rollback ERR
 git -C "$repo" reset --hard "$target"
-bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh" "$repo/vps/install-control.sh" "$repo/vps/install-bot.sh" "$repo/vps/cdn-only.sh"
+bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh" "$repo/vps/install-control.sh" "$repo/vps/install-bot.sh" "$repo/vps/cdn-only.sh" "$repo/vps/install-node.sh" "$repo/vps/diagnose-login.sh"
 "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt"
 bash "$repo/vps/panel-permissions.sh"
 BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
