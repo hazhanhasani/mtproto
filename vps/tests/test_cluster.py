@@ -117,7 +117,7 @@ class ClusterTests(unittest.TestCase):
             "hostname": "de2.example.com",
         })
         self.assertEqual(res.status_code, 200)
-        self.assertIn("Paste your one-time node token", res.get_data(as_text=True))
+        self.assertIn("کلید محرمانه اتصال", res.get_data(as_text=True))
         self.assertIn("de2.example.com", res.get_data(as_text=True))
         self.assertEqual(len(cluster.read()["nodes"]), 1)
 
@@ -145,7 +145,7 @@ class ClusterTests(unittest.TestCase):
         content = node_agent.caddy_config(proposed, "de1.example.com", "panel.de1.example.com")
         self.assertNotIn(b"de1.example.com {", content)
         self.assertIn(b"alt.example.com {", content)
-        self.assertIn(b"127.0.0.1:8080", content)
+        self.assertIn(b"127.0.0.1:9120", content)
         proposed["domains"].append("panel.de1.example.com")
         with self.assertRaises(ValueError):
             node_agent.caddy_config(proposed, "de1.example.com", "panel.de1.example.com")
