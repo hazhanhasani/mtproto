@@ -30,6 +30,15 @@ class NodeEnrollmentTests(unittest.TestCase):
             "domains": ["node.example.com"], "profiles": []
         }
 
+    def test_http_502_hint_uses_central_server_without_leaking_tokens(self):
+        problem = ValueError("Controller rejected node enrollment: HTTP 502")
+        hint = enrollment.enrollment_hint(problem)
+        self.assertIn("CENTRAL", hint)
+        self.assertIn("recover-controller.sh", hint)
+        self.assertNotIn("Bearer", hint)
+        self.assertIn("node ID", enrollment.enrollment_hint(
+            ValueError("Controller rejected node enrollment: HTTP 401")))
+
     def test_reject_controller_loopback_identity_before_contact(self):
         self.state["panel_hostname"] = "mde.blluepanel.ir"
         contacted = []
