@@ -65,9 +65,40 @@ class PanelTests(unittest.TestCase):
                     self.assertNotIn("token path", body)
                     self.assertNotIn("invalid bot file", body)
 
+    def test_login_page_remains_accessible_after_expired_csrf(self):
+        initial = self.client.get("/login", base_url=self.url)
+        self.assertEqual(initial.status_code, 200)
+        self.assertIn("ورود به مدیریت", initial.get_data(as_text=True))
+        old_csrf = self.csrf()
+        with self.client.session_transaction(base_url=self.url) as sess:
+            sess["csrf"] = "simulated-new-csrf-" + "b" * 28
+        expired = self.client.post("/login", base_url=self.url,
+                                   data={"_csrf": old_csrf, "username": "admin",
+                                         "password": "test-safe-password"})
+        self.assertEqual(expired.status_code, 303)
+        self.assertTrue(expired.headers["Location"].endswith("/login"))
+        refreshed = self.client.get("/login", base_url=self.url)
+        self.assertEqual(refreshed.status_code, 200)
+        self.assertIn("نشست ورود منقضی شده است", refreshed.get_data(as_text=True))
+        self.assertNotEqual(self.csrf(), old_csrf)
+        with self.client.session_transaction(base_url=self.url) as sess:
+            self.assertFalse(sess.get("authenticated"))
+        # Mutating requests outside the login route must keep strict CSRF.
+        denied = self.client.post("/profiles", base_url=self.url,
+                                  data={"label": "must-not-be-created", "_csrf": old_csrf})
+        self.assertEqual(denied.status_code, 403)
+        self.assertNotIn("Location", denied.headers)
+        success = self.client.post("/login", base_url=self.url, data={
+            "username": "admin", "password": "test-safe-password",
+            "_csrf": self.csrf()
+        })
+        self.assertEqual(success.status_code, 302)
+
     def test_login_csrf_and_logout(self):
-        self.assertEqual(self.client.post("/login", data={"username": "admin"},
-                                          base_url=self.url).status_code, 403)
+        first = self.client.post("/login", data={"username": "admin"},
+                                 base_url=self.url)
+        self.assertEqual(first.status_code, 303)
+        self.assertTrue(first.headers["Location"].endswith("/login"))
         self.client.get("/login", base_url=self.url)
         token = self.csrf()
         self.assertTrue(token)
