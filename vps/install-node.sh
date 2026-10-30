@@ -93,6 +93,34 @@ Unit=blue-mtproxy-node.service
 [Install]
 WantedBy=timers.target
 UNIT
+cat >/etc/systemd/system/blue-mtproxy-relay@.service <<'UNIT'
+[Unit]
+Description=Blue Proxy hostname-specific WEB relay %i
+After=network-online.target tproxy-firewall.service
+Wants=network-online.target
+Requires=tproxy-firewall.service
+[Service]
+Type=simple
+User=tproxy
+Group=tproxy
+LoadCredential=profiles.json:/etc/tproxy-server/profiles.json
+ExecStart=/usr/local/bin/tproxy-server -config /etc/tproxy-server/domains/%i.json
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+IPAddressDeny=any
+IPAddressAllow=localhost
+UMask=0077
+[Install]
+WantedBy=multi-user.target
+UNIT
 systemctl daemon-reload
 systemctl disable --now blue-mtproxy-panel.service 2>/dev/null || true
 systemctl disable --now blue-mtproxy-telegram-bot.service 2>/dev/null || true
