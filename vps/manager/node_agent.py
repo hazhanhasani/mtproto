@@ -145,6 +145,18 @@ def reconcile(desired, settings):
     if recorded > desired["revision"]:
         raise ValueError("configuration rollback rejected")
     if recorded == desired["revision"]:
+        # Cached revision is not health: self-heal inactive processes and
+        # report failures instead of showing a misleading green node.
+        services = ["tproxy-server.service", "caddy.service"]
+        services += ["blue-mtproxy@" + p["id"] + ".service"
+                     for p in updated["profiles"] if p["enabled"]]
+        try:
+            for service in services:
+                run_fixed(["/usr/bin/systemctl", "is-active", "--quiet", service])
+        except subprocess.CalledProcessError:
+            run_fixed(["/usr/local/sbin/blue-mtproxy-apply"])
+            for service in services:
+                run_fixed(["/usr/bin/systemctl", "is-active", "--quiet", service])
         return "ok"
     original_hostname = settings["original_hostname"]
     expected = caddy_config(desired, original_hostname, existing["panel_hostname"])
