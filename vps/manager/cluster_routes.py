@@ -134,6 +134,33 @@ def delete_inbound(node_id, profile_id):
     return change(op, node_id)
 
 
+@bp.post("/nodes/<node_id>/inbounds/<profile_id>/move")
+def move_inbound(node_id, profile_id):
+    target_id = request.form.get("target_id", "")
+
+    def op(doc):
+        src = cluster.get_node(doc, node_id)
+        dst = cluster.get_node(doc, target_id)
+        if src["id"] == dst["id"]:
+            raise ValueError("مقصد باید نود دیگری باشد")
+        profile = cluster.get_profile(src, profile_id)
+        if len(src["profiles"]) < 2:
+            raise ValueError("انتقال آخرین اینباند نود مجاز نیست")
+        slots = {p["slot"] for p in dst["profiles"]}
+        slot = next((v for v in range(32) if v not in slots), None)
+        if slot is None:
+            raise ValueError("نود مقصد ظرفیت آزاد ندارد")
+        copied = copy.deepcopy(profile)
+        copied["slot"] = slot
+        copied["hostname"] = dst["hostname"]
+        src["profiles"] = [p for p in src["profiles"] if p["id"] != profile_id]
+        dst["profiles"].append(copied)
+        cluster.bump(src)
+        cluster.bump(dst)
+    result = change(op, node_id)
+    return result
+
+
 @bp.post("/nodes/<node_id>/inbounds/<profile_id>/users")
 def add_user(node_id, profile_id):
     def op(doc):
