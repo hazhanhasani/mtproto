@@ -66,6 +66,14 @@ def enforce():
         provided = request.form.get("_csrf", "")
         expected = session.get("csrf", "")
         if not expected or not secrets.compare_digest(provided, expected):
+            if request.endpoint == "login":
+                # Browser tabs kept across updates may submit an old CSRF
+                # token. Safely invalidate that login session and render a
+                # fresh form instead of exposing a bare Werkzeug 403 page.
+                # All authenticated mutation endpoints still fail closed.
+                session.clear()
+                flash("نشست ورود منقضی شده است؛ لطفاً دوباره وارد شوید.", "error")
+                return redirect(url_for("login"), code=303)
             abort(403)
     if request.endpoint not in {"login", "health"} and not session.get("authenticated"):
         return redirect(url_for("login"))
