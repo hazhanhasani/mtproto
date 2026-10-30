@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Blue Proxy | نودها و لوکیشن‌ها</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='manager.css') }}">
+<style>
+.cluster-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
+.cluster-grid .panel{min-width:0}
+.node-card{display:flex;flex-direction:column;gap:10px}
+.node-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.node-title strong{font-size:17px}
+.aliases,.inline-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.alias{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border-radius:12px;border:1px solid #34435f}
+.cluster-note{font-size:13px;color:#a8bad8;line-height:1.9}
+.mono-wrap{direction:ltr;text-align:left;word-break:break-all;white-space:pre-wrap}
+.enrollment{border:1px solid #3a84a0}
+.node-inbound{margin-top:16px}
+.node-inbound summary{cursor:pointer;padding:14px;font-weight:750}
+.node-inbound details{border-top:1px solid #26364e}
+.node-inbound details[open] summary{color:#9dd9f2}
+.cluster-form{margin-top:16px}
+.node-label{font-size:12px;color:#b4c5db}
+@media(max-width:760px){.cluster-grid{grid-template-columns:1fr}.settings-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="workspace">
+<aside class="sidebar" aria-label="ناوبری اصلی">
+  <a class="brand" href="{{url_for('index')}}"><span class="brand-icon">B</span><span><strong>Blue Proxy</strong><small>NETWORK CONTROL</small></span></a>
+  <div class="nav-category">مدیریت</div>
+  <nav class="side-nav">
+    <a href="{{url_for('index')}}">◫ داشبورد</a>
+    <a href="{{url_for('inbounds')}}">◇ اینباندهای سرور اصلی</a>
+    <a href="{{url_for('users')}}">♙ کاربران سرور اصلی</a>
+    <a class="selected" href="{{url_for('cluster.nodes')}}">◎ نودها و لوکیشن‌ها <span class="count">{{nodes|length}}</span></a>
+    <a href="{{url_for('bot_page')}}">✈ ربات کانال</a>
+  </nav>
+  <div class="nav-category">سیستم</div>
+  <nav class="side-nav">
+    <a href="{{url_for('debug_dashboard')}}">◉ سلامت و Debug</a>
+    <a href="{{url_for('settings_page')}}">⚙ تنظیمات</a>
+  </nav>
+</aside>
+<main class="main">
+<header class="topbar">
+  <div class="breadcrumb">بلو پروکسی / <a href="{{url_for('cluster.nodes')}}">نودها</a>{% if node %} / {{node.name}}{% endif %}</div>
+  <form action="{{url_for('logout')}}" method="post"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn subtle">خروج</button></form>
+</header>
+<div class="page">
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div role="alert" class="alert {{'bad' if category=='error' else 'good'}}">{{message}}</div>
+{% endfor %}
+
+{% if enrollment %}
+<section class="panel enrollment">
+  <div class="panel-title"><h2>اتصال امن نود جدید — فقط یک بار نمایش داده می‌شود</h2></div>
+  <p class="cluster-note">پس از نصب اولیه Blue Proxy روی VPS جدید، دستور زیر را یک‌بار روی همان VPS اجرا کنید. کلید را هنگام درخواست وارد کنید؛ بعد از اتصال، مدیریت فقط از این پنل انجام می‌شود.</p>
+  <div class="link-box"><label>دستور اتصال نود</label><pre class="mono-wrap">sudo bash /opt/blue-mtproxy/vps/install-node.sh --controller {{request.url_root.rstrip('/')}} --node-id {{enrollment.id}}</pre></div>
+  <div class="field"><label>کلید محرمانه اتصال (یک‌بار کپی و در جای امن نگهداری کنید)</label>
+  <textarea rows="2" readonly dir="ltr">{{enrollment.token}}</textarea></div>
+</section>
+{% endif %}
+
+{% if not node %}
+<div class="page-heading">
+  <div><div class="eyebrow">MULTI-NODE CONTROL</div><h1>نودها و لوکیشن‌ها</h1>
+  <p>مدیریت مستقل اینباندها، Secretها، دامنه‌ها و لوکیشن‌ها از یک پنل مرکزی.</p></div>
+</div>
+<section class="cluster-grid">
+{% for n in nodes %}
+<div class="panel node-card">
+  <div class="node-title"><strong>{{n.name}}</strong>
+    <span class="status {{'up' if statuses[n.id]=='online' else 'down' if statuses[n.id] in ('offline','error') else 'unknown'}}">{{{'online':'آنلاین','offline':'آفلاین','error':'خطا','syncing':'در حال همگام‌سازی','pending':'آماده اتصال'}[statuses[n.id]]}}</span>
+  </div>
+  <div class="secondary-text">{{n.location}} · {{n.hostname}}</div>
+  <div class="secondary-text">{{n.profiles|length}} اینباند · {{n.domains|length+1}} دامنه</div>
+  <div class="secondary-text">نسخه تنظیمات {{n.applied_revision}} / {{n.revision}}</div>
+  <a class="btn primary" href="{{url_for('cluster.node_detail',node_id=n.id)}}">مدیریت نود و اینباندها</a>
+</div>
+{% else %}
+<div class="panel"><h2>هنوز نودی اضافه نشده است</h2><p class="cluster-note">اولین نود را از فرم زیر ثبت کنید.</p></div>
+{% endfor %}
+</section>
+<section class="panel form-panel">
+  <div class="panel-title"><h2>+ افزودن نود</h2></div>
+  <form method="post" action="{{url_for('cluster.create_node')}}" class="settings-grid">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="field"><label>نام نود</label><input name="name" required maxlength="80" placeholder="Germany 01"></div>
+    <div class="field"><label>لوکیشن</label><input name="location" required maxlength="80" placeholder="Germany / Frankfurt"></div>
+    <div class="field"><label>دامنه اصلی این نود</label><input dir="ltr" name="hostname" required placeholder="de1.example.com"></div>
+    <button class="btn primary">ساخت نود و کلید اتصال</button>
+  </form>
+  <p class="cluster-note">سرور جدید یک‌بار نیاز به آماده‌سازی دارد. پس از اتصال Agent، افزودن اینباند، مدیریت کاربران، دامنه‌ها و SSL از همین پنل انجام می‌شود. هر نود سقف مستقل ۳۲ Secret فعال دارد.</p>
+</section>
+{% else %}
+<div class="page-heading">
+  <div><div class="eyebrow">NODE / {{node.id}}</div><h1>{{node.name}}</h1>
+    <p>{{node.location}} · {{node.hostname}} ·
+    <span class="status {{'up' if statuses[node.id]=='online' else 'down' if statuses[node.id] in ('error','offline') else 'unknown'}}">{{{'online':'آنلاین','offline':'آفلاین','error':'خطا','syncing':'در حال همگام‌سازی','pending':'در انتظار اتصال'}[statuses[node.id]]}}</span></p></div>
+  <a class="btn" href="{{url_for('cluster.nodes')}}">← همه نودها</a>
+</div>
+<section class="metrics three">
+  <div class="metric"><div class="metric-head">اینباندها</div><div class="metric-value">{{node.profiles|length}}</div><div class="metric-note">هر کدام Secret و کاربران مستقل</div></div>
+  <div class="metric"><div class="metric-head">دامنه‌ها</div><div class="metric-value">{{node.domains|length+1}}</div><div class="metric-note">SSL خودکار با Caddy پس از تنظیم DNS</div></div>
+  <div class="metric"><div class="metric-head">همگام‌سازی</div><div class="metric-value">{{node.applied_revision}} / {{node.revision}}</div><div class="metric-note">آخرین تماس: {{node.last_seen if node.last_seen else 'ثبت نشده'}} (Unix time)</div></div>
+</section>
+{% if node.last_error %}<div class="alert bad">گزارش Agent: {{node.last_error}}</div>{% endif %}
+<section class="panel">
+  <div class="panel-title"><h2>دامنه‌های نود و SSL</h2><span class="hint">صدور و تمدید HTTPS به شکل خودکار توسط Caddy</span></div>
+  <div class="aliases">
+    {% for d in [node.hostname]+node.domains %}
+    <span class="alias"><span dir="ltr">{{d}}</span>{% if d==node.hostname %}<small>اصلی</small>{% else %}
+      <form method="post" action="{{url_for('cluster.remove_domain',node_id=node.id)}}">
+        <input type="hidden" name="_csrf" value="{{csrf}}"><input type="hidden" name="hostname" value="{{d}}">
+        <button class="btn compact danger" type="submit" aria-label="حذف دامنه {{d}}">×</button>
+      </form>{% endif %}</span>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{url_for('cluster.add_domain',node_id=node.id)}}" class="field-row cluster-form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="field grow"><label>دامنه جدید</label><input dir="ltr" name="hostname" required placeholder="proxy2.example.com"></div>
+    <button class="btn primary">+ افزودن دامنه</button>
+  </form>
+  <p class="cluster-note">DNS دامنه باید به IP همین نود اشاره کند و TCP 80/443 در دسترس باشد. در حالت Cloudflare Proxied از Full (strict) و کلاینت WEB سازگار استفاده کنید؛ این دامنه لزوماً پروکسی MTProto معمولی نیست.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-title"><h2>اینباندهای نود</h2><span class="hint">مدیریت مستقل سرویس‌ها و کاربران</span></div>
+  {% for p in node.profiles %}
+  <details class="node-inbound" id="inbound-{{p.id}}">
+    <summary>{{p.label}} · {{p.hostname}} · پورت {{10443+p.slot}} · {{'فعال' if p.enabled else 'غیرفعال'}} · {{p.clients|length}} کاربر</summary>
+    <div class="panel">
+      <div class="link-box"><label>WEB Inbound</label><code class="mono-wrap">{{web_url(p.hostname,p.secret)}}</code></div>
+      <div class="link-box"><label>Direct MTProto (فقط در حالت غیر CDN-only)</label><code class="mono-wrap">{{direct_url(p.hostname,p.secret,10443+p.slot)}}</code></div>
+      <form method="post" action="{{url_for('cluster.edit_inbound',node_id=node.id,profile_id=p.id)}}" class="settings-grid cluster-form">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <div class="field"><label>عنوان اینباند</label><input name="label" required maxlength="80" value="{{p.label}}"></div>
+        <div class="field"><label>دامنه اینباند</label><select name="hostname">{% for d in [node.hostname]+node.domains %}<option value="{{d}}" {{'selected' if p.hostname==d else ''}}>{{d}}</option>{% endfor %}</select></div>
+        <div class="field"><label>انتقال WEB</label><select name="carrier">{% for c in carriers %}<option value="{{c}}" {{'selected' if c==p.carrier else ''}}>{{c}}</option>{% endfor %}</select></div>
+        <div class="field"><label>کانال اسپانسر</label><input name="channel" value="{{p.channel}}"></div>
+        <div class="field"><label>Ad Tag</label><input name="ad_tag" dir="ltr" maxlength="32" value="{{p.ad_tag}}"></div>
+        <label class="checkline"><input type="checkbox" name="enabled" {{'checked' if p.enabled else ''}}> فعال</label>
+        <button class="btn primary">ذخیره تنظیمات</button>
+      </form>
+      <div class="panel-title"><h3>کاربران اینباند</h3></div>
+      {% for u in p.clients %}
+      <div class="user-item">
+        <div class="field-row"><strong>{{u.label}}</strong> <span class="status {{'up' if u.enabled else 'down'}}">{{'فعال' if u.enabled else 'قطع'}}</span></div>
+        <div class="link-box"><code class="mono-wrap">{{web_url(p.hostname,u.secret)}}</code></div>
+        <div class="inline-actions">
+        {% for action,text in [('toggle','فعال/غیرفعال'),('rotate','Secret جدید'),('delete','حذف کاربر')] %}
+        <form method="post" action="{{url_for('cluster.edit_user',node_id=node.id,profile_id=p.id,client_id=u.id,action=action)}}">
+          <input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn compact {{'danger' if action=='delete' else ''}}">{{text}}</button>
+        </form>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+      <form method="post" action="{{url_for('cluster.add_user',node_id=node.id,profile_id=p.id)}}" class="field-row cluster-form">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <div class="field grow"><label>نام کاربر جدید</label><input name="label" required maxlength="80"></div>
+        <button class="btn primary">+ افزودن کاربر</button>
+      </form>
+      <div class="danger-row">
+        <form method="post" action="{{url_for('cluster.rotate_inbound',node_id=node.id,profile_id=p.id)}}">
+          <input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn">چرخش Secret اینباند</button>
+        </form>
+        <form method="post" action="{{url_for('cluster.delete_inbound',node_id=node.id,profile_id=p.id)}}">
+          <input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn danger">حذف اینباند</button>
+        </form>
+      </div>
+      <p class="cluster-note">آمار اتصال و حجم کاربران در هسته رسمی MTProxy به‌صورت تفکیکی موجود نیست؛ وضعیت نود به معنای اتصال کاربر نیست.</p>
+    </div>
+  </details>
+  {% else %}
+  <div class="empty">اینباندی در این نود تعریف نشده است.</div>
+  {% endfor %}
+</section>
+<section class="panel form-panel">
+  <div class="panel-title"><h2>+ ساخت اینباند روی {{node.location}}</h2></div>
+  <form method="post" action="{{url_for('cluster.add_inbound',node_id=node.id)}}" class="field-row">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="field grow"><label>نام اینباند</label><input name="label" required maxlength="80" placeholder="Proxy DE #1"></div>
+    <div class="field grow"><label>دامنه</label><select name="hostname">{% for d in [node.hostname]+node.domains %}<option value="{{d}}">{{d}}</option>{% endfor %}</select></div>
+    <button class="btn primary">ساخت اینباند</button>
+  </form>
+</section>
+{% endif %}
+</div>
+</main>
+</div>
+</body>
+</html>
