@@ -6,6 +6,25 @@ umask 077
 [[ "${1:-}" == "" || "${1:-}" == "--force" ]] || { echo "Unknown option" >&2; exit 2; }
 force="${1:-}"
 repo=/opt/blue-mtproxy
+# A node config on the controller itself is a mispairing, not evidence
+# that this host should have its management panel permanently shut down.
+is_remote_node() {
+  [[ -f /etc/blue-mtproxy/node.json ]] || return 1
+  python3 - <<'PY'
+import json
+from pathlib import Path
+from urllib.parse import urlsplit
+try:
+    node = json.loads(Path("/etc/blue-mtproxy/node.json").read_text())
+    state = json.loads(Path("/var/lib/blue-mtproxy/state.json").read_text())
+    controller = urlsplit(node["controller"]).hostname
+    ok = bool(controller and controller.rstrip(".").lower()
+              != state["panel_hostname"].rstrip(".").lower())
+except (OSError, ValueError, KeyError, TypeError):
+    ok = False
+raise SystemExit(0 if ok else 1)
+PY
+}
 exec 9>/run/lock/blue-mtproxy-update.lock
 flock -n 9 || { echo "Update already running"; exit 0; }
 if [[ "$force" != "--force" ]]; then
@@ -32,14 +51,14 @@ rollback() {
   git -C "$repo" reset --hard "$old"
   "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt" || true
   bash "$repo/vps/panel-permissions.sh" || true
-  if [[ ! -f /etc/blue-mtproxy/node.json ]]; then
+  if ! is_remote_node; then
     systemctl restart blue-mtproxy-panel.service || true
     systemctl restart blue-mtproxy-telegram-bot.service || true
   fi
 }
 trap rollback ERR
 git -C "$repo" reset --hard "$target"
-bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh" "$repo/vps/install-control.sh" "$repo/vps/install-bot.sh" "$repo/vps/cdn-only.sh" "$repo/vps/install-node.sh" "$repo/vps/diagnose-login.sh"
+bash -n "$repo/vps/install.sh" "$repo/vps/update.sh" "$repo/vps/bootstrap.sh" "$repo/vps/panel-permissions.sh" "$repo/vps/repair-panel.sh" "$repo/vps/repair-backend.sh" "$repo/vps/install-debug.sh" "$repo/vps/install-control.sh" "$repo/vps/install-bot.sh" "$repo/vps/cdn-only.sh" "$repo/vps/install-node.sh" "$repo/vps/diagnose-login.sh" "$repo/vps/recover-controller.sh"
 "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt"
 bash "$repo/vps/panel-permissions.sh"
 BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
@@ -47,7 +66,11 @@ BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
 # The control broker is running older imported Python code after a Git
 # update; restart it before the panel starts sending new operations.
 BLUE_CONTROL_NO_RESTART=1 bash "$repo/vps/install-control.sh"
-if [[ -f /etc/blue-mtproxy/node.json ]]; then
+if [[ -f /etc/blue-mtproxy/node.json ]] && ! is_remote_node; then
+  echo "[warn] Controller was mis-enrolled as its own node; restoring admin."
+  bash "$repo/vps/recover-controller.sh"
+fi
+if is_remote_node; then
   # Keep the remote admin and publishing bot closed. The controller remains
   # the only write surface; the node timer picks up the new agent code.
   systemctl stop blue-mtproxy-panel.service blue-mtproxy-telegram-bot.service 2>/dev/null || true
