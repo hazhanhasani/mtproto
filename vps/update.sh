@@ -32,8 +32,10 @@ rollback() {
   git -C "$repo" reset --hard "$old"
   "$repo/.venv/bin/pip" install -q -r "$repo/vps/requirements.txt" || true
   bash "$repo/vps/panel-permissions.sh" || true
-  systemctl restart blue-mtproxy-panel.service || true
-  systemctl restart blue-mtproxy-telegram-bot.service || true
+  if [[ ! -f /etc/blue-mtproxy/node.json ]]; then
+    systemctl restart blue-mtproxy-panel.service || true
+    systemctl restart blue-mtproxy-telegram-bot.service || true
+  fi
 }
 trap rollback ERR
 git -C "$repo" reset --hard "$target"
@@ -45,6 +47,15 @@ BLUE_DEBUG_NO_RESTART=1 bash "$repo/vps/install-debug.sh"
 # The control broker is running older imported Python code after a Git
 # update; restart it before the panel starts sending new operations.
 BLUE_CONTROL_NO_RESTART=1 bash "$repo/vps/install-control.sh"
+if [[ -f /etc/blue-mtproxy/node.json ]]; then
+  # Keep the remote admin and publishing bot closed. The controller remains
+  # the only write surface; the node timer picks up the new agent code.
+  systemctl stop blue-mtproxy-panel.service blue-mtproxy-telegram-bot.service 2>/dev/null || true
+  systemctl restart blue-mtproxy-node.timer
+  trap - ERR
+  echo "Node updated to $target"
+  exit 0
+fi
 systemctl restart blue-mtproxy-panel.service
 bash "$repo/vps/install-bot.sh"
 for i in 1 2 3 4 5 6 7 8 9 10; do
