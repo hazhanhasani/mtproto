@@ -51,7 +51,10 @@ fi
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
   if curl --noproxy '*' --fail --silent --max-time 3 http://127.0.0.1:8750/healthz | grep -q '"ok":true'; then
     echo "[ok] Controller panel is healthy at 127.0.0.1:8750."
-    echo "Check public HTTPS with: sudo bash /opt/blue-mtproxy/vps/diagnose-login.sh"
+    if ! systemctl is-active --quiet caddy.service; then
+      systemctl start caddy.service || echo "[warn] Caddy HTTPS failed to start."
+    fi
+    echo "Verify HTTPS origin: sudo bash /opt/blue-mtproxy/vps/diagnose-login.sh"
     exit 0
   fi
   sleep 1
