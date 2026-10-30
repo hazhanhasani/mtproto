@@ -29,6 +29,9 @@ class ClusterTests(unittest.TestCase):
         b.start()
         self.addCleanup(a.stop)
         self.addCleanup(b.stop)
+        env = patch.dict(os.environ, {"PANEL_ADMIN_PASSWORD_HASH": generate_password_hash("cluster-test-password", method="scrypt")})
+        env.start()
+        self.addCleanup(env.stop)
         admin.app.config["TESTING"] = True
         self.client = admin.app.test_client()
         self.base = "https://panel.example.com"
