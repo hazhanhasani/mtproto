@@ -90,6 +90,8 @@ def verify_desired(desired, settings, existing):
             or type(desired.get("revision")) is not int or desired["revision"] < 1):
         raise ValueError("invalid node control document")
     hostname = desired.get("hostname")
+    if hostname != settings["original_hostname"]:
+        raise ValueError("primary hostname must match bootstrap hostname")
     domains = desired.get("domains")
     profiles = desired.get("profiles")
     if not isinstance(hostname, str) or not HOST.fullmatch(hostname):
@@ -189,12 +191,16 @@ def reconcile(desired, settings):
     except Exception:
         atomic(STATE, previous, owner=panel_uid)
         atomic(CADDY_SNIPPET, prior_caddy, 0o644)
-        try:
-            run_fixed(["/usr/local/sbin/blue-mtproxy-apply"])
-            domain_relays.restore(previous_aliases, run_fixed)
-            run_fixed(["/usr/bin/systemctl", "restart", "caddy.service"])
-        except Exception:
-            pass
+        for recover in (
+            lambda: run_fixed(["/usr/local/sbin/blue-mtproxy-apply"]),
+            lambda: domain_relays.restore(previous_aliases, run_fixed),
+            lambda: run_fixed(["/usr/bin/systemctl", "restart", "caddy.service"]),
+        ):
+            try:
+                recover()
+            except Exception:
+                # Continue attempting other recoveries, even if one fails.
+                pass
         raise
 
 
