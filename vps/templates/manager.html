@@ -13,6 +13,7 @@
       <a href="{{url_for('index')}}" class="{{'selected' if section=='overview' else ''}}"><span class="nav-ic">◫</span> داشبورد</a>
       <a href="{{url_for('inbounds')}}" class="{{'selected' if section in ('inbounds','detail') else ''}}"><span class="nav-ic">◇</span> اینباندها <span class="count">{{state.profiles|length}}</span></a>
       <a href="{{url_for('users')}}" class="{{'selected' if section=='users' else ''}}"><span class="nav-ic">♙</span> کاربران <span class="count">{{total_users}}</span></a>
+      <a href="{{url_for('cluster.nodes')}}"><span class="nav-ic">◎</span> نودها و لوکیشن‌ها</a>
       <a href="{{url_for('bot_page')}}" class="{{'selected' if section=='bot' else ''}}"><span class="nav-ic">✈</span> ربات کانال</a>
     </nav>
     <div class="nav-category">سیستم</div>
