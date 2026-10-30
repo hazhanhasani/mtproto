@@ -117,7 +117,8 @@ class ClusterTests(unittest.TestCase):
             "hostname": "de2.example.com",
         })
         self.assertEqual(res.status_code, 200)
-        self.assertIn("کلید محرمانه اتصال", res.get_data(as_text=True))
+        self.assertTrue("کلید محرمانه اتصال" in res.get_data(as_text=True),
+                        "Enrollment must show one-time pairing key")
         self.assertIn("de2.example.com", res.get_data(as_text=True))
         self.assertEqual(len(cluster.read()["nodes"]), 1)
 
@@ -130,8 +131,12 @@ class ClusterTests(unittest.TestCase):
                "profiles": [{"id": "main", "slot": 0, "label": "Main",
                              "secret": "a"*32, "ad_tag": "", "channel": "",
                              "enabled": True, "carrier": "websocket"}]}
-        settings = {"id": nid}
+        settings = {"id": nid, "original_hostname": "de1.example.com"}
         self.assertIsNone(node_agent.verify_desired(proposed, settings, old))
+        proposed["hostname"] = "other.example.com"
+        with self.assertRaises(ValueError):
+            node_agent.verify_desired(proposed, settings | {"original_hostname": "de1.example.com"}, old)
+        proposed["hostname"] = "de1.example.com"
         proposed["node_id"] = "nffffffffffff"
         with self.assertRaises(ValueError):
             node_agent.verify_desired(proposed, settings, old)
