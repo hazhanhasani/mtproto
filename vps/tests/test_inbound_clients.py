@@ -173,7 +173,7 @@ class ManagementUITests(unittest.TestCase):
         self.assertIn('name="inbound_id"', users_html)
         self.assertIn('action="/users"', users_html)
         self.assertIn('name="label"', users_html)
-        self.assertIn("UI 0.5.0", users_html)
+        self.assertIn("UI 0.6.0", users_html)
         self.assertIn("افزودن کاربر جدید", users_html)
 
         resp = self.post("/users", {"label": "New user via Users", "inbound_id": "main"})
@@ -228,7 +228,7 @@ class ManagementUITests(unittest.TestCase):
     def test_ui_version_endpoint_requires_login(self):
         r = self.client.get("/version", base_url=self.base)
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json["ui_version"], "0.5.0")
+        self.assertEqual(r.json["ui_version"], "0.6.0")
         self.assertIn("global-user-create", r.json["features"])
         self.assertIn("no-store", r.headers.get("Cache-Control", ""))
         fresh = app.app.test_client()
