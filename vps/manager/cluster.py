@@ -221,6 +221,8 @@ def node_status(node, now=None):
         return "offline"
     if node.get("status") == "error":
         return "error"
+    if node.get("status") == "pending":
+        return "pending"
     if node.get("applied_revision", 0) < node.get("revision", 0):
         return "syncing"
     return "online" if node.get("status") == "ok" else "pending"
