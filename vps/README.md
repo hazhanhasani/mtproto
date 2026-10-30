@@ -1,5 +1,10 @@
 # Blue Proxy Manager — VPS Installation
 
+## Multi-node management
+
+The new centralized /nodes dashboard supports remote VPS nodes, location-specific inbounds and users, domain aliases and automatic Caddy HTTPS certificates. See [multi-node onboarding and limitations](NODES.md) before connecting a node.
+
+
 ## Ten-user randomized Telegram channel publishing
 
 For each selected inbound, the panel provisions **10 normal, persistent
