@@ -25,7 +25,16 @@ done
 read -r -s -p "Paste your one-time node token: " TOKEN </dev/tty
 echo
 [[ "$(printf %s "$TOKEN" | wc -c)" -ge 32 ]] || { echo "Invalid token" >&2; exit 2; }
+EXISTING_NODE_CONFIG=0
+[[ -f /etc/blue-mtproxy/node.json ]] && EXISTING_NODE_CONFIG=1
 export NODE_CONTROLLER="$CONTROLLER" NODE_ID="$NODE_ID" NODE_TOKEN="$TOKEN"
+# Check the actual /api/nodes/.../desired endpoint BEFORE changing local
+# services. Prevent registering the central dashboard as a remote node.
+cd /opt/blue-mtproxy/vps
+python3 -m manager.enrollment || {
+  echo "[error] Enrollment preflight rejected. No services were disabled." >&2
+  exit 1
+}
 python3 - <<'PY'
 import json, os
 from pathlib import Path
@@ -122,10 +131,21 @@ UMask=0077
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
+# Pair before disabling local UI; a failed agent cannot strand the server.
+if ! systemctl start blue-mtproxy-node.service; then
+  echo "[error] Node synchronization failed; local admin is still enabled." >&2
+  echo "Check: sudo journalctl -u blue-mtproxy-node.service -n 35 --no-pager" >&2
+  # Avoid the updater ever classifying a failed first-time enrollment as an
+  # agent-managed remote node. Preserve the key in a root-only backup.
+  if [[ "$EXISTING_NODE_CONFIG" == "0" && -f /etc/blue-mtproxy/node.json ]]; then
+    mv /etc/blue-mtproxy/node.json /etc/blue-mtproxy/node-failed-pairing.json
+    chmod 0600 /etc/blue-mtproxy/node-failed-pairing.json
+  fi
+  exit 1
+fi
+systemctl enable --now blue-mtproxy-node.timer
 systemctl disable --now blue-mtproxy-panel.service 2>/dev/null || true
 systemctl disable --now blue-mtproxy-telegram-bot.service 2>/dev/null || true
 systemctl disable --now blue-mtproxy-telegram-cron.timer 2>/dev/null || true
-systemctl enable --now blue-mtproxy-node.timer
-systemctl start blue-mtproxy-node.service || true
-echo "[ok] Node enrollment complete. Check status in the central panel."
+echo "[ok] Verified successful node synchronization; remote panel retired."
 echo "[info] Automatic TLS requires matching DNS and public TCP 80/443."
