@@ -15,6 +15,7 @@ from flask import Flask, abort, flash, redirect, render_template, render_templat
 from werkzeug.security import check_password_hash
 
 from manager.model import new_secret, validate, web_url, direct_url, CARRIERS
+from manager.cluster_routes import bp as cluster_bp
 from manager.channel_pool import POOL_SIZE, pool_clients, provision_pool
 from manager.control_client import dispatch
 from manager.bot_config import (
@@ -29,6 +30,7 @@ STATE = Path("/var/lib/blue-mtproxy/state.json")
 CDN_FLAG = Path("/etc/blue-mtproxy/cdn-only")
 LOCK = STATE.with_name("ui.lock")
 app = Flask(__name__)
+app.register_blueprint(cluster_bp)
 app.secret_key = os.environ["PANEL_SECRET_KEY"]
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -38,7 +40,7 @@ app.config.update(
     MAX_CONTENT_LENGTH=32768,
 )
 FAILURES = {}
-PANEL_UI_VERSION = "0.5.0"  # distinguish deployed UI from older single-page panel
+PANEL_UI_VERSION = "0.6.0"  # distinguish deployed UI from older single-page panel
 
 
 @app.after_request
@@ -56,7 +58,7 @@ def security(response):
 
 @app.before_request
 def enforce():
-    if request.path == "/healthz":
+    if request.path == "/healthz" or request.endpoint in {"cluster.node_desired", "cluster.node_report"}:
         return
     if request.method == "POST":
         if request.mimetype != "application/x-www-form-urlencoded":
@@ -314,7 +316,7 @@ def panel_version():
     return {"ui_version": PANEL_UI_VERSION, "features": [
         "inbounds", "inbound-clients", "global-user-create",
         "active-inbound-connections", "web-aggregate-traffic", "telegram-channel-bot",
-        "telegram-half-hour-cron",
+        "telegram-half-hour-cron", "multi-node", "node-domains", "automatic-node-tls",
     ]}
 
 
