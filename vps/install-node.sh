@@ -21,6 +21,18 @@ done
 [[ -f /opt/blue-mtproxy/vps/manager/node_agent.py ]] || {
   echo "Update the Blue Proxy Git checkout before enrollment" >&2; exit 1;
 }
+# Fail closed before even requesting the token if the controller DNS name
+# is this machine's own admin-panel hostname.
+export NODE_CONTROLLER="$CONTROLLER"
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+from urllib.parse import urlsplit
+local = json.loads(Path("/var/lib/blue-mtproxy/state.json").read_text())
+host = urlsplit(os.environ["NODE_CONTROLLER"]).hostname
+if not host or host.rstrip(".").lower() == local["panel_hostname"].rstrip(".").lower():
+    raise SystemExit("This is the central controller. Do not enroll it as a remote node.")
+PY
 [[ -r /dev/tty ]] || { echo "A terminal is needed for one-time pairing" >&2; exit 1; }
 read -r -s -p "Paste your one-time node token: " TOKEN </dev/tty
 echo
@@ -35,6 +47,17 @@ python3 -m manager.enrollment || {
   echo "[error] Enrollment preflight rejected. No services were disabled." >&2
   exit 1
 }
+# If any subsequent install step fails before successful pairing, keep
+# this server independently manageable. Never leave a new node.json that
+# misclassifies the server during the next GitHub auto-update.
+cleanup_unpaired() {
+  if [[ "$EXISTING_NODE_CONFIG" == "0" && -f /etc/blue-mtproxy/node.json ]]; then
+    systemctl disable --now blue-mtproxy-node.timer 2>/dev/null || true
+    mv -- /etc/blue-mtproxy/node.json /etc/blue-mtproxy/node-failed-pairing.json
+    chmod 0600 /etc/blue-mtproxy/node-failed-pairing.json
+  fi
+}
+trap cleanup_unpaired ERR
 python3 - <<'PY'
 import json, os
 from pathlib import Path
@@ -137,15 +160,13 @@ if ! systemctl start blue-mtproxy-node.service; then
   echo "Check: sudo journalctl -u blue-mtproxy-node.service -n 35 --no-pager" >&2
   # Avoid the updater ever classifying a failed first-time enrollment as an
   # agent-managed remote node. Preserve the key in a root-only backup.
-  if [[ "$EXISTING_NODE_CONFIG" == "0" && -f /etc/blue-mtproxy/node.json ]]; then
-    mv /etc/blue-mtproxy/node.json /etc/blue-mtproxy/node-failed-pairing.json
-    chmod 0600 /etc/blue-mtproxy/node-failed-pairing.json
-  fi
+  cleanup_unpaired
   exit 1
 fi
 systemctl enable --now blue-mtproxy-node.timer
 systemctl disable --now blue-mtproxy-panel.service 2>/dev/null || true
 systemctl disable --now blue-mtproxy-telegram-bot.service 2>/dev/null || true
 systemctl disable --now blue-mtproxy-telegram-cron.timer 2>/dev/null || true
+trap - ERR
 echo "[ok] Verified successful node synchronization; remote panel retired."
 echo "[info] Automatic TLS requires matching DNS and public TCP 80/443."
