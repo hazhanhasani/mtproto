@@ -12,7 +12,10 @@ from pathlib import Path
 import re
 import tempfile
 
-from .model import HOST
+if __package__:
+    from .model import HOST
+else:
+    from model import HOST
 
 BASE_CONFIG = Path("/etc/tproxy-server/config.json")
 CONFIG_DIR = Path("/etc/tproxy-server/domains")
