@@ -18,8 +18,10 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 if __package__:
     from .model import HOST, validate
+    from . import domain_relays
 else:
     from model import HOST, validate
+    import domain_relays
 
 CONFIG = Path("/etc/blue-mtproxy/node.json")
 STATE = Path("/var/lib/blue-mtproxy/state.json")
@@ -114,22 +116,22 @@ def verify_desired(desired, settings, existing):
 
 
 def caddy_config(desired, original_hostname, panel_hostname):
-    # Reverse proxy every path to the upstream relay. Do not bypass the
-    # relay for public content or authenticate based on URL paths.
-    hosts = [h for h in desired["domains"] if h != original_hostname]
-    if panel_hostname in hosts:
+    # Every additional hostname gets a separate WEB relay: upstream
+    # bridge capabilities are bound to exactly one public_hostname.
+    aliases = domain_relays.ports(desired["domains"], original_hostname)
+    if panel_hostname in aliases:
         raise ValueError("panel hostname cannot be an alias")
     return ("# Managed by blue-mtproxy-node; do not edit.\n" +
             "".join(
                 host + " {\n"
                 "  encode zstd gzip\n"
                 "  header -Via\n"
-                "  reverse_proxy 127.0.0.1:8080 {\n"
+                "  reverse_proxy 127.0.0.1:" + str(port[0]) + " {\n"
                 "    transport http {\n"
                 "      response_header_timeout 40s\n"
                 "    }\n"
                 "  }\n"
-                "}\n\n" for host in hosts
+                "}\n\n" for host, port in aliases.items()
             )).encode()
 
 
@@ -147,37 +149,41 @@ def reconcile(desired, settings):
     recorded = int(REVISION.read_text()) if REVISION.exists() else 0
     if recorded > desired["revision"]:
         raise ValueError("configuration rollback rejected")
-    if recorded == desired["revision"]:
-        # Cached revision is not health: self-heal inactive processes and
-        # report failures instead of showing a misleading green node.
-        services = ["tproxy-server.service", "caddy.service"]
-        services += ["blue-mtproxy@" + p["id"] + ".service"
-                     for p in updated["profiles"] if p["enabled"]]
+    original_hostname = settings["original_hostname"]
+    aliases = domain_relays.ports(desired["domains"], original_hostname)
+    previous_aliases = domain_relays.snapshot()
+    services = ["tproxy-server.service", "caddy.service"]
+    services += ["blue-mtproxy@" + p["id"] + ".service"
+                 for p in updated["profiles"] if p["enabled"]]
+    services += [domain_relays.service_name(host) for host in aliases]
+    if recorded == desired["revision"] and set(previous_aliases) == set(aliases):
         try:
             for service in services:
                 run_fixed(["/usr/bin/systemctl", "is-active", "--quiet", service])
+            return "ok"
         except subprocess.CalledProcessError:
-            run_fixed(["/usr/local/sbin/blue-mtproxy-apply"])
-            for service in services:
-                run_fixed(["/usr/bin/systemctl", "is-active", "--quiet", service])
-        return "ok"
-    original_hostname = settings["original_hostname"]
+            pass  # apply and restart failed services below
+
     expected = caddy_config(desired, original_hostname, existing["panel_hostname"])
     prior_caddy = CADDY_SNIPPET.read_bytes() if CADDY_SNIPPET.exists() else b""
     panel_uid = pwd.getpwnam("bluepanel").pw_uid
     try:
         atomic(CADDY_SNIPPET, expected, 0o644)
-        # Original upstream Caddyfile can interpolate these environment
-        # variables, even if an interactive shell did not source them.
+        atomic(STATE, (json.dumps(updated, ensure_ascii=False, indent=2) + "\n").encode(),
+               owner=panel_uid)
+        run_fixed(["/usr/local/sbin/blue-mtproxy-apply"])
+        # Each alias has its own public_hostname, loopback WEB listener and
+        # LoadCredential-bound copy of the same validated profiles document.
+        domain_relays.configure(desired, original_hostname, run_fixed)
         env = dict(os.environ, TPROXY_HOSTNAME=original_hostname,
                    TPROXY_SITE_ROOT="/srv/tproxy-site",
                    ACME_EMAIL="certificates@" + original_hostname)
         run_fixed(["/usr/local/bin/caddy", "validate", "--config",
                    "/etc/caddy/Caddyfile", "--adapter", "caddyfile"], env=env)
-        atomic(STATE, (json.dumps(updated, ensure_ascii=False, indent=2) + "\n").encode(),
-               owner=panel_uid)
-        run_fixed(["/usr/local/sbin/blue-mtproxy-apply"])
-        run_fixed(["/usr/bin/systemctl", "reload", "caddy.service"])
+        # The pinned upstream Caddy unit has no ExecReload; restart is required.
+        run_fixed(["/usr/bin/systemctl", "restart", "caddy.service"])
+        for service in services:
+            run_fixed(["/usr/bin/systemctl", "is-active", "--quiet", service])
         atomic(REVISION, str(desired["revision"]).encode() + b"\n")
         return "ok"
     except Exception:
@@ -185,7 +191,8 @@ def reconcile(desired, settings):
         atomic(CADDY_SNIPPET, prior_caddy, 0o644)
         try:
             run_fixed(["/usr/local/sbin/blue-mtproxy-apply"])
-            run_fixed(["/usr/bin/systemctl", "reload", "caddy.service"])
+            domain_relays.restore(previous_aliases, run_fixed)
+            run_fixed(["/usr/bin/systemctl", "restart", "caddy.service"])
         except Exception:
             pass
         raise
