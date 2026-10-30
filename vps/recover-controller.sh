@@ -40,10 +40,12 @@ bash /opt/blue-mtproxy/vps/panel-permissions.sh
 systemctl reset-failed blue-mtproxy-panel.service || true
 systemctl enable --now blue-mtproxy-panel.service
 if systemctl cat blue-mtproxy-telegram-bot.service >/dev/null 2>&1; then
-  systemctl enable --now blue-mtproxy-telegram-bot.service
+  systemctl enable --now blue-mtproxy-telegram-bot.service || \
+    echo "[warn] Optional Telegram bot is not ready; panel recovery continues."
 fi
 if systemctl cat blue-mtproxy-telegram-cron.timer >/dev/null 2>&1; then
-  systemctl enable --now blue-mtproxy-telegram-cron.timer
+  systemctl enable --now blue-mtproxy-telegram-cron.timer || \
+    echo "[warn] Optional channel timer could not be enabled."
 fi
 
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
