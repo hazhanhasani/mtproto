@@ -162,6 +162,17 @@
         <div class="field grow"><label>نام کاربر جدید</label><input name="label" required maxlength="80"></div>
         <button class="btn primary">+ افزودن کاربر</button>
       </form>
+      {% if node.profiles|length > 1 and nodes|length > 1 %}
+      <form method="post" action="{{url_for('cluster.move_inbound',node_id=node.id,profile_id=p.id)}}" class="field-row cluster-form">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <div class="field grow"><label>انتقال اینباند به لوکیشن / نود دیگر</label>
+          <select name="target_id">{% for destination in nodes if destination.id != node.id %}
+            <option value="{{destination.id}}">{{destination.name}} — {{destination.location}}</option>
+          {% endfor %}</select>
+        </div><button class="btn">انتقال با حفظ کاربران و Secretها</button>
+      </form>
+      <p class="cluster-note">لینک‌ها با دامنه نود جدید صادر می‌شوند. تا همگام‌سازی هر دو نود، ممکن است Secret برای مدتی روی هر دو فعال بماند.</p>
+      {% endif %}
       <div class="danger-row">
         <form method="post" action="{{url_for('cluster.rotate_inbound',node_id=node.id,profile_id=p.id)}}">
           <input type="hidden" name="_csrf" value="{{csrf}}"><button class="btn">چرخش Secret اینباند</button>
