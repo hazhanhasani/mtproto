@@ -16,7 +16,10 @@ import tempfile
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
-from model import HOST, validate
+if __package__:
+    from .model import HOST, validate
+else:
+    from model import HOST, validate
 
 CONFIG = Path("/etc/blue-mtproxy/node.json")
 STATE = Path("/var/lib/blue-mtproxy/state.json")
