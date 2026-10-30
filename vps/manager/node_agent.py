@@ -15,6 +15,7 @@ import sys
 import tempfile
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.error import HTTPError
 
 if __package__:
     from .model import HOST, validate
@@ -216,17 +217,27 @@ def main():
         status = reconcile(desired, settings)
         if status == "ok":
             revision = desired["revision"]
+    except HTTPError as exc:
+        # HTTP status is useful; never log the request headers, token, body
+        # or confidential response text.
+        error = "controller_http_" + str(exc.code)
+        print("Node sync failed: " + error, file=sys.stderr)
     except Exception as exc:
-        # Never report configs, tokens or raw responses to the panel.
         error = type(exc).__name__
         print("Node sync failed: " + error, file=sys.stderr)
+    reported = False
     try:
         request_controller(settings, "POST", route + "/report", {
             "revision": revision, "status": status, "error": error,
         })
+        reported = True
+    except HTTPError as exc:
+        print("Node report failed: HTTP " + str(exc.code), file=sys.stderr)
     except Exception:
         print("Node report failed", file=sys.stderr)
-    return 0 if status != "error" else 1
+    # Enrollment only succeeds when the controller acknowledged the
+    # node, not merely when fetching a pending desired document worked.
+    return 0 if status != "error" and reported else 1
 
 
 if __name__ == "__main__":
