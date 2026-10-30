@@ -20,7 +20,9 @@ sensitive: anyone holding it can retrieve the node's proxy credentials.
 
 1. Install the existing Blue Proxy VPS application once on a fresh Debian
    or Ubuntu x86_64 server using vps/bootstrap.sh. Set a proxy hostname and
-   a separate panel hostname. Initial bootstrapping needs root access once;
+   a separate panel hostname. Use the same proxy hostname as the node's
+   primary domain registered in the central panel; extra hostnames can be
+   added later. Initial bootstrapping needs root access once;
    completely login-free initial deployment requires a cloud provider API
    or cloud-init integration that is not available in this release.
 2. In the central panel open /nodes and register name, location and domain.
