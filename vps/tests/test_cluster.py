@@ -14,7 +14,7 @@ from werkzeug.security import generate_password_hash
 os.environ.setdefault("PANEL_ADMIN_PASSWORD_HASH", generate_password_hash("cluster-test-password", method="scrypt"))
 
 from manager import cluster
-from manager import node_agent
+from manager import node_agent, domain_relays
 import app as admin
 
 
@@ -139,6 +139,25 @@ class ClusterTests(unittest.TestCase):
         proposed["domains"].append("admin.de1.example.com")
         with self.assertRaises(ValueError):
             node_agent.verify_desired(proposed, settings, old)
+
+    def test_multi_domain_relays_have_independent_hostnames_and_ports(self):
+        ports = domain_relays.ports(
+            ["de1.example.com", "de2.example.com", "alt.example.com"],
+            "de1.example.com")
+        self.assertEqual(ports["alt.example.com"], (9120, 9220))
+        self.assertEqual(ports["de2.example.com"], (9121, 9221))
+        self.assertEqual(len({pair[0] for pair in ports.values()}), 2)
+        original = {"public_hostname": "de1.example.com",
+                    "listen": "127.0.0.1:8080", "admin_listen": "127.0.0.1:8081",
+                    "profiles_file": "/run/credentials/tproxy-server.service/profiles.json",
+                    "public_dir": "/srv/tproxy-site"}
+        config = json.loads(domain_relays.config_for(
+            "de2.example.com", 9121, 9221, original))
+        self.assertEqual(config["public_hostname"], "de2.example.com")
+        self.assertEqual(config["listen"], "127.0.0.1:9121")
+        self.assertIn("blue-mtproxy-relay@de2.example.com.service",
+                      config["profiles_file"])
+        self.assertEqual(original["public_hostname"], "de1.example.com")
 
     def test_caddy_aliases_are_separate_from_panel(self):
         proposed = {"domains": ["de1.example.com", "alt.example.com"]}
